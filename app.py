@@ -10,7 +10,7 @@ st.markdown("Plaka (örn: 171), İsim veya Telefon numarası yazın")
 # Arama kutusu
 arama = st.text_input("Aranacak bilgiyi yazın...", "")
 
-# Tüm veriler (Python sözlük yapısına çevrildi)
+# Tüm veriler
 veriler = [
     {"p": "16 M 00002", "i": "AHMET KEZKEÇ", "t": "0 532 7322736"},
     {"p": "16 M 00007", "i": "SÜLEYMAN AYDEMİR", "t": "0 535 7143956"},
@@ -504,7 +504,7 @@ if arama:
         plaka = temizle(kisi["p"])
         isim = temizle(kisi["i"])
         telefon = temizle(kisi["t"])
-        # Sadece rakamları alıyoruz (örneğin "171" araması için)
+        
         sadece_rakam = re.sub(r'[^0-9]', '', plaka)
         
         if sorgu in sadece_rakam or sorgu in isim or sorgu in telefon or sorgu in plaka:
@@ -513,15 +513,24 @@ if arama:
     # Sonuçları ekrana yazdırma
     if len(sonuclar) > 0:
         for kisi in sonuclar:
-            # Python içinden CSS ile özel ve şık bir kart tasarımı yapıyoruz
+            # Telefon numarası bağlantısı için boşlukları temizleyelim ("0 532 123" -> "0532123")
+            tel_link = kisi['t'].replace(" ", "")
+            
             st.markdown(f"""
-            <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #1a73e8;">
-                <div style="font-size: 20px; font-weight: bold; color: #202124; margin-bottom: 8px;">{kisi['i']}</div>
-                <div style="font-size: 18px; color: #1a73e8; font-weight: bold; margin-bottom: 8px; background: #e8f0fe; display: inline-block; padding: 4px 10px; border-radius: 6px;">{kisi['p']}</div>
-                <div style="font-size: 17px; color: #188038; font-weight: bold;">{kisi['t']}</div>
+            <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #1a73e8; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 20px; font-weight: bold; color: #202124; margin-bottom: 8px;">{kisi['i']}</div>
+                    <div style="font-size: 18px; color: #1a73e8; font-weight: bold; margin-bottom: 8px; background: #e8f0fe; display: inline-block; padding: 4px 10px; border-radius: 6px;">{kisi['p']}</div>
+                    <div style="font-size: 17px; color: #188038; font-weight: bold;">{kisi['t']}</div>
+                </div>
+                <a href="tel:{tel_link}" style="background-color: #28a745; color: white; padding: 12px 18px; border-radius: 50px; text-decoration: none; font-size: 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-weight: bold;">📞 Ara</a>
             </div>
             """, unsafe_allow_html=True)
     else:
         st.warning("Eşleşen sonuç bulunamadı.")
 else:
     st.info("Arama yapmak için yukarıya plaka veya isim yazın.")
+
+# Alt Kısım - Yapımcı İmzası
+st.markdown("---")
+st.markdown("<div style='text-align: center; color: gray; font-weight: bold; font-size: 14px; padding: 10px;'>YAPIMCI: TAHA GÜLER</div>", unsafe_allow_html=True)
