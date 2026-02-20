@@ -5,7 +5,7 @@ import re
 st.set_page_config(page_title="Esnaf Araç Rehberi", page_icon="🚌", layout="centered")
 
 st.title("Araç Sorgulama Sistemi")
-st.markdown("Plaka (örn: 171), İsim veya Telefon numarası yazın")
+st.markdown("Plaka (örn: 171, 00171, 10171), İsim veya Telefon numarası yazın")
 
 # Arama kutusu
 arama = st.text_input("Aranacak bilgiyi yazın...", "")
@@ -505,15 +505,28 @@ if arama:
         isim = temizle(kisi["i"])
         telefon = temizle(kisi["t"])
         
-        sadece_rakam = re.sub(r'[^0-9]', '', plaka)
+        # Plakanın içerisindeki harfleri ve tireleri temizleyip salt rakam dizisine dönüştürür (Örn: 16m00265 -> 1600265)
+        plaka_rakam = re.sub(r'[^0-9]', '', plaka)
         
-        if sorgu in sadece_rakam or sorgu in isim or sorgu in telefon or sorgu in plaka:
+        isimde_var = sorgu in isim
+        plakada_var = (sorgu in plaka) or (sorgu in plaka_rakam)
+        
+        # Telefon numaralarında tesadüfi 3-5 haneli eşleşmeleri engellemek için akıllı filtre:
+        telefonda_var = False
+        if sorgu in telefon:
+            # Eğer sorgu sadece rakamlardan oluşuyorsa ve uzunluğu 5 veya daha kısaysa (plaka araması demektir) telefona BAKMA!
+            if sorgu.isnumeric() and len(sorgu) <= 5:
+                telefonda_var = False
+            else:
+                # Ancak 6 veya daha fazla hane yazıldıysa (gerçekten numara aranıyorsa) aramaya dahil et.
+                telefonda_var = True
+                
+        if isimde_var or plakada_var or telefonda_var:
             sonuclar.append(kisi)
             
     # Sonuçları ekrana yazdırma
     if len(sonuclar) > 0:
         for kisi in sonuclar:
-            # Telefon numarası bağlantısı için boşlukları temizleyelim ("0 532 123" -> "0532123")
             tel_link = kisi['t'].replace(" ", "")
             
             st.markdown(f"""
