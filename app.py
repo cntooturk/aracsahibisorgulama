@@ -1,8 +1,38 @@
 import streamlit as st
 import re
 
-# Sayfa ayarları
+# Sayfa ayarları (Bu kısım en başta olmalı)
 st.set_page_config(page_title="Esnaf Araç Rehberi", page_icon="🚌", layout="centered")
+
+# --- YAPIMCI İMZASI (EN ÜSTTE) ---
+st.markdown("""
+<div style="
+    text-align: center;
+    background-color: #f8f9fa; 
+    padding: 20px; 
+    border-radius: 12px; 
+    margin-bottom: 25px; 
+    border-bottom: 3px solid #1a73e8;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+">
+    <span style="
+        font-size: 16px; 
+        color: #666; 
+        font-weight: 600;
+        display: block; 
+        margin-bottom: 5px;
+    ">PROJE YAPIMCISI</span>
+    <span style="
+        font-size: 28px; 
+        color: #1a73e8; 
+        font-weight: 900; 
+        text-transform: uppercase; 
+        letter-spacing: 1.5px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    ">TAHA GÜLER</span>
+</div>
+""", unsafe_allow_html=True)
+# ---------------------------------
 
 st.title("Araç Sorgulama Sistemi")
 st.markdown("Plaka (örn: 171, 00171, 10171), İsim veya Telefon numarası yazın")
@@ -505,20 +535,16 @@ if arama:
         isim = temizle(kisi["i"])
         telefon = temizle(kisi["t"])
         
-        # Plakanın içerisindeki harfleri ve tireleri temizleyip salt rakam dizisine dönüştürür (Örn: 16m00265 -> 1600265)
         plaka_rakam = re.sub(r'[^0-9]', '', plaka)
         
         isimde_var = sorgu in isim
         plakada_var = (sorgu in plaka) or (sorgu in plaka_rakam)
         
-        # Telefon numaralarında tesadüfi 3-5 haneli eşleşmeleri engellemek için akıllı filtre:
         telefonda_var = False
         if sorgu in telefon:
-            # Eğer sorgu sadece rakamlardan oluşuyorsa ve uzunluğu 5 veya daha kısaysa (plaka araması demektir) telefona BAKMA!
             if sorgu.isnumeric() and len(sorgu) <= 5:
                 telefonda_var = False
             else:
-                # Ancak 6 veya daha fazla hane yazıldıysa (gerçekten numara aranıyorsa) aramaya dahil et.
                 telefonda_var = True
                 
         if isimde_var or plakada_var or telefonda_var:
@@ -543,7 +569,3 @@ if arama:
         st.warning("Eşleşen sonuç bulunamadı.")
 else:
     st.info("Arama yapmak için yukarıya plaka veya isim yazın.")
-
-# Alt Kısım - Yapımcı İmzası
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: gray; font-weight: bold; font-size: 14px; padding: 10px;'>YAPIMCI: TAHA GÜLER</div>", unsafe_allow_html=True)
