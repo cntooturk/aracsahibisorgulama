@@ -14,12 +14,12 @@ st.markdown("""
 # ---------------------------------
 
 st.title("Araç Sorgulama Sistemi")
-st.markdown("Plaka (örn: 171, 00171), İsim, Memleket veya Telefon numarası yazın")
+st.markdown("Plaka (örn: 171, 00171), İsim, Memleket (örn: Bursa) veya Telefon Numarası yazın")
 
 # Arama kutusu
 arama = st.text_input("Aranacak bilgiyi yazın...", "")
 
-# Tüm veriler (Memleket bilgisi "m" ile eklendi)
+# Tüm veriler (HAZIRUN.pdf dosyasına göre baştan sona memleket eklentili ve eksiksiz halidir)
 veriler = [
     {"p": "116-10225", "i": "METİN GÜZELTAŞ", "m": "MUTKİ", "t": "0 532 5703613"},
     {"p": "16 M 00002", "i": "AHMET KEZKEÇ", "m": "MUŞ", "t": "0 532 7322736"},
@@ -196,7 +196,7 @@ veriler = [
     {"p": "16 M 00325", "i": "SAİT YAŞAR", "m": "M.K.PAŞA", "t": "0 546 6767824"},
     {"p": "16 M 00325", "i": "ŞABAN ÖZKUL", "m": "ORHANELİ", "t": "0 534 2876948"},
     {"p": "16 M 00329", "i": "KAZİM ÖZMEN", "m": "BAYKAN", "t": "0 532 3708204"},
-    {"p": "16 M 00330", "i": "EMİN ELÇİN", "m": "MUTKİ BİTL", "t": "0 532 6513674"},
+    {"p": "16 M 00330", "i": "EMİN ELÇİN", "m": "MUTKİ", "t": "0 532 6513674"},
     {"p": "16 M 00332", "i": "MEHMET DENİZ", "m": "MUŞ", "t": "0 532 7131317"},
     {"p": "16 M 00334", "i": "FİKRET KOÇAK", "m": "MUŞ", "t": "0 536 4872457"},
     {"p": "16 M 00337", "i": "ŞAHİN ARSLAN", "m": "DİYARBAKIR", "t": "0 541 9133360"},
@@ -486,7 +486,7 @@ veriler = [
     {"p": "Belirtilmemiş", "i": "TUNCAY DONAT", "m": "BURSA", "t": "0 533 6120506"},
     {"p": "Belirtilmemiş", "i": "BAHRİ TİTİZ", "m": "BURSA", "t": "0 532 4881375"},
     {"p": "Belirtilmemiş", "i": "M.SAIT BAŞ", "m": "BİLGE", "t": "0 533 5196773"},
-    {"p": "Belirtilmemiş", "i": "МЕНМЕТ ERDEM", "m": "BURSA", "t": "0 533 3547979"},
+    {"p": "Belirtilmemiş", "i": "MEHMET ERDEM", "m": "BURSA", "t": "0 533 3547979"},
     {"p": "Belirtilmemiş", "i": "KEREM GÜRBÜZ", "m": "BİTLİS", "t": "0 537 3693675"},
     {"p": "Belirtilmemiş", "i": "SÖNMEZ SARIKAYA", "m": "REFAHİYE", "t": "0532 3525485"},
     {"p": "Belirtilmemiş", "i": "MUSTAFA ASLAN", "m": "ORHANELİ", "t": "0 532 3245387"},
@@ -503,7 +503,7 @@ veriler = [
     {"p": "Belirtilmemiş", "i": "EMRE KEZKEÇ", "m": "MUŞ", "t": "0 507 3649849"},
     {"p": "Belirtilmemiş", "i": "ABDULLAH ÖNEL", "m": "MUŞ", "t": "0 537 5210199"},
     {"p": "Belirtilmemiş", "i": "FERIT GÜZELTAŞ", "m": "BİTLİS", "t": "0 533 2212801"},
-    {"p": "Belirtilmemiş", "i": "МЕНМЕТ CANŞI", "m": "MARDİN", "t": "0 537 2521100"},
+    {"p": "Belirtilmemiş", "i": "MEHMET CANŞI", "m": "MARDİN", "t": "0 537 2521100"},
     {"p": "Belirtilmemiş", "i": "İHSAN KOCAMAN", "m": "MUŞ", "t": "0 533 6276882"},
     {"p": "Belirtilmemiş", "i": "REŞİT KOTAN", "m": "MUŞ", "t": "0 546 4173745"},
     {"p": "Belirtilmemiş", "i": "SABĞATULLAH OKULEVİ", "m": "BAYKAN", "t": "0533 7791124"},
@@ -528,9 +528,16 @@ veriler = [
     {"p": "Belirtilmemiş", "i": "BURHAN DOLAN", "m": "BURSA", "t": "0 532 3425805"}
 ]
 
-# Arama işlemleri
+
+# %100 Çalışan Türkçe Karakter Temizleme ve Eşleştirme Sistemi
 def temizle(metin):
-    return str(metin).lower().replace(" ", "")
+    if not isinstance(metin, str):
+        return ""
+    # Türkçe harflerin hepsini ortak bir yapıya indirgeyerek "Muş" veya "MUŞ" yazıldığında aynen yakalanmasını sağlar.
+    harfler = {"I": "ı", "İ": "i", "Ş": "ş", "Ğ": "ğ", "Ü": "ü", "Ö": "ö", "Ç": "ç"}
+    for buyuk, kucuk in harfler.items():
+        metin = metin.replace(buyuk, kucuk)
+    return metin.lower().replace(" ", "")
 
 if arama:
     sorgu = temizle(arama)
@@ -557,6 +564,7 @@ if arama:
             else:
                 telefonda_var = True
                 
+        # Yazılan metin; ismin, memleketin, plakanın veya telefonun içindeyse göster.
         if isimde_var or plakada_var or telefonda_var or memlekette_var:
             sonuclar.append(kisi)
             
@@ -564,21 +572,23 @@ if arama:
     if len(sonuclar) > 0:
         for kisi in sonuclar:
             
+            memleket_bilgisi = kisi.get('m', 'Belirtilmemiş')
+            
             # VEFAT edenler için kırmızı uyarı butonu, diğerleri için Arama Butonu
-            if kisi['t'].upper() == "VEFAT":
+            if kisi.get('t', '').upper() == "VEFAT":
                 telefon_gorseli = "Vefat Etmiş"
                 buton_kodu = f'<div style="background-color: #dc3545; color: white; padding: 10px 15px; border-radius: 50px; font-size: 16px; font-weight: bold; text-align: center;">🔴 Vefat</div>'
             else:
-                telefon_gorseli = kisi['t']
-                tel_link = kisi['t'].replace(" ", "")
+                telefon_gorseli = kisi.get('t', '')
+                tel_link = telefon_gorseli.replace(" ", "")
                 buton_kodu = f'<a href="tel:{tel_link}" style="background-color: #28a745; color: white; padding: 12px 18px; border-radius: 50px; text-decoration: none; font-size: 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-weight: bold;">📞 Ara</a>'
                 
             st.markdown(f"""
             <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #1a73e8; display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <div style="font-size: 20px; font-weight: bold; color: #202124; margin-bottom: 4px;">{kisi['i']}</div>
-                    <div style="font-size: 14px; color: #5f6368; margin-bottom: 8px;">📍 Nüfus: <b>{kisi['m']}</b></div>
-                    <div style="font-size: 18px; color: #1a73e8; font-weight: bold; margin-bottom: 8px; background: #e8f0fe; display: inline-block; padding: 4px 10px; border-radius: 6px;">{kisi['p']}</div>
+                    <div style="font-size: 20px; font-weight: bold; color: #202124; margin-bottom: 4px;">{kisi.get('i', '')}</div>
+                    <div style="font-size: 14px; color: #5f6368; margin-bottom: 8px;">📍 Nüfus: <b>{memleket_bilgisi}</b></div>
+                    <div style="font-size: 18px; color: #1a73e8; font-weight: bold; margin-bottom: 8px; background: #e8f0fe; display: inline-block; padding: 4px 10px; border-radius: 6px;">{kisi.get('p', 'Belirtilmemiş')}</div>
                     <div style="font-size: 17px; color: #188038; font-weight: bold;">{telefon_gorseli}</div>
                 </div>
                 {buton_kodu}
