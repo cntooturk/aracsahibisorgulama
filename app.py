@@ -1,593 +1,946 @@
 import streamlit as st
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import time
 import re
+import concurrent.futures
+from datetime import datetime
+import pytz 
+import urllib3
+from geopy.geocoders import Nominatim
+import streamlit.components.v1 as components
 
-# Sayfa ayarları (Bu kısım en başta olmalı)
-st.set_page_config(page_title="Esnaf Araç Rehberi", page_icon="🚌", layout="centered")
+# SSL Hata Gizleme
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- YAPIMCI İMZASI (EN ÜSTTE) ---
+# --- AYARLAR ---
+st.set_page_config(page_title="Cntooturk Takip Sistemi", page_icon="🚌", layout="centered")
+
+# =====================================================================
+# 🔐 ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU (Yeni Eklendi)
+# =====================================================================
+PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" # Örnek Login URL
+# Şifreler st.secrets üzerinden güvenle çekilir (.streamlit/secrets.toml dosyasından)
+try:
+    USERNAME = st.secrets["API_USER"]
+    PASSWORD = st.secrets["API_PASS"]
+except:
+    USERNAME = "Tanimsiz"
+    PASSWORD = "Tanimsiz"
+
+@st.cache_resource
+def get_private_session():
+    """Asıl sisteme giriş yapıp Cookie'yi hafızada tutan kalıcı oturum"""
+    session = requests.Session()
+    retry = Retry(connect=3, backoff_factor=0.3)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=150, pool_maxsize=150)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    
+    # İLERİDE AKTİF EDİLECEK GİRİŞ İŞLEMİ:
+    # login_data = {"UserName": USERNAME, "Password": PASSWORD}
+    # session.post(PRIVATE_API_LOGIN_URL, data=login_data, verify=False)
+    # Bu sayede session, .AspNetCore.Cookies bilgisini içine alır ve sonraki isteklerde otomatik kullanır.
+    
+    return session
+
+# =====================================================================
+
+# --- MEVCUT ÇALIŞAN API BAĞLANTISI ---
+API_URL = "https://bursakartapi.abys-web.com/api/static/realtimedata"
+HEADERS = {
+    'Content-Type': 'application/json',
+    'Origin': 'https://www.bursakart.com.tr',
+    'Referer': 'https://www.bursakart.com.tr/',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+}
+
+@st.cache_resource
+def get_http_session():
+    session = requests.Session()
+    retry = Retry(connect=2, backoff_factor=0.2)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=150, pool_maxsize=150)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    session.headers.update(HEADERS)
+    return session
+
+# --- CSS TASARIM ---
 st.markdown("""
-<div style="text-align: center; background-color: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 25px; border-bottom: 3px solid #1a73e8; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-    <span style="font-size: 16px; color: #666; font-weight: 600; display: block; margin-bottom: 5px;">PROJE YAPIMCISI</span>
-    <span style="font-size: 28px; color: #1a73e8; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1);">TAHA GÜLER</span>
-</div>
+    <style>
+        .block-container { padding-top: 0.5rem; padding-bottom: 1rem; }
+        [data-testid="column"] { padding: 0px !important; margin: 0px !important; }
+        
+        .stButton button {
+            height: 24px !important;
+            min_height: 24px !important;
+            width: 100% !important;
+            padding: 0px !important;
+            font-size: 11px !important;
+            margin: 4px 0px !important;
+            line-height: 24px !important;
+            background-color: #2b2b2b; 
+            color: #e0e0e0;
+            border: 1px solid #444;
+        }
+        .stButton button:hover { border-color: #ff4b4b; color: #ff4b4b; }
+        
+        .stLinkButton a {
+            height: 24px !important;
+            min_height: 24px !important;
+            width: 100% !important;
+            font-size: 11px !important;
+            padding: 0px !important;
+            margin: 4px 0px !important;
+            display: flex; justify-content: center; align-items: center;
+            line-height: 24px !important;
+            background-color: #2b2b2b;
+            color: #e0e0e0 !important;
+            border: 1px solid #444;
+        }
+
+        .metric-card {
+            background-color: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 5px;
+            text-align: center;
+            margin: 0px 2px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .metric-title {
+            color: #aaaaaa;
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .metric-value {
+            color: #ffffff;
+            font-size: 24px;
+            font-weight: 800;
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .info-box {
+            background-color: #262730;
+            border-left: 5px solid #00bc8c;
+            padding: 10px;
+            margin-bottom: 10px;
+            color: white;
+            border-radius: 4px;
+        }
+
+        .address-card {
+            background-color: #262730;
+            border-left: 5px solid #ff4b4b;
+            padding: 12px;
+            margin: 15px 0px;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex; align-items: center;
+        }
+        
+        .note-card {
+            background-color: #3e2a00;
+            border-left: 5px solid #ffc107;
+            color: #e0e0e0;
+            padding: 12px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        
+        .oho-note {
+            background-color: #1a2a3a;
+            border-left: 5px solid #3498db;
+            color: #e0e0e0;
+            padding: 12px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        
+        .type-summary-card {
+            background-color: #1e1e1e;
+            border: 1px solid #444;
+            border-left: 4px solid #f39c12;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        .table-header {
+            font-size: 11px;
+            font-weight: bold;
+            color: #ff4b4b;
+            margin-bottom: 4px;
+            text-align: center;
+            display: block;
+        }
+
+        hr { margin: 2px 0px !important; border-top: 1px solid #333; }
+        p { margin: 0px !important; font-size: 13px; color: #ccc; }
+        
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            height: 40px;
+            white-space: pre-wrap;
+            background-color: #1e1e1e;
+            border-radius: 4px 4px 0px 0px;
+            padding: 10px 20px;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #ff4b4b !important;
+            color: white !important;
+        }
+    </style>
 """, unsafe_allow_html=True)
-# ---------------------------------
 
-st.title("Araç Sorgulama Sistemi")
-st.markdown("Plaka (örn: 171, 00171), İsim, Memleket (örn: Bursa) veya Telefon Numarası yazın")
 
-# Arama kutusu
-arama = st.text_input("Aranacak bilgiyi yazın...", "")
-
-# Tüm veriler (HAZIRUN.pdf dosyasına göre baştan sona memleket eklentili ve eksiksiz halidir)
-veriler = [
-    {"p": "116-10225", "i": "METİN GÜZELTAŞ", "m": "MUTKİ", "t": "0 532 5703613"},
-    {"p": "16 M 00002", "i": "AHMET KEZKEÇ", "m": "MUŞ", "t": "0 532 7322736"},
-    {"p": "16 M 00007", "i": "SÜLEYMAN AYDEMİR", "m": "ORHANELİ", "t": "0535 7143956"},
-    {"p": "16 M 00009", "i": "MURAT KAHRİMAN", "m": "BURSA", "t": "0 532 6403403"},
-    {"p": "16 M 00013", "i": "PAŞA ÇELİK", "m": "BİTLİS", "t": "0 532 3601648"},
-    {"p": "16 M 00015", "i": "NURULLAH AYDEMİR", "m": "ORHANELİ", "t": "0535 7143956"},
-    {"p": "16 M 00024", "i": "NEJDET ASLAN", "m": "BURSA", "t": "0532 2925341"},
-    {"p": "16 M 00028", "i": "MEHMET İNANÇ", "m": "MUŞ", "t": "0 536 5162463"},
-    {"p": "16 M 00034", "i": "EMRAH ASLAN", "m": "BURSA", "t": "0536 7674486"},
-    {"p": "16 M 00035", "i": "İBRAHİM AYDIN", "m": "BAYBURT", "t": "0 536 3038070"},
-    {"p": "16 M 00036", "i": "YUSUF AKAGÜNDÜZ", "m": "BAYBURT", "t": "0 532 5115181"},
-    {"p": "16 M 00036", "i": "DERYA KARADAĞ", "m": "BURSA", "t": "0 553 2220268"},
-    {"p": "16 M 00044", "i": "HÜSEYİN BABALAR", "m": "BURSA", "t": "0 533 3485212"},
-    {"p": "16 M 00048", "i": "AYHAN ÇİMCİK", "m": "MUŞ", "t": "0 532 3601649"},
-    {"p": "16 M 00054-050-312", "i": "NESLİHAN GÜZELTAŞ", "m": "ERCİŞ", "t": "0 532 5012583"},
-    {"p": "16 M 00058-96", "i": "HARUN YAZICI", "m": "ÇATKIZILCA", "t": "0 507 2295652"},
-    {"p": "16 M 00059", "i": "NURULLAH ALTUN", "m": "MARDİN", "t": "0 545 2522058"},
-    {"p": "16 M 00061", "i": "LEVENT UMUR", "m": "ŞENOBA", "t": "0 532 6046630"},
-    {"p": "16 M 00062", "i": "VELİ PELİT", "m": "BAFRA", "t": "0 536 2857901"},
-    {"p": "16 M 00063", "i": "RAMAZAN UMUR", "m": "ŞENOBA", "t": "0 532 3778914"},
-    {"p": "16 M 00063", "i": "YUSUF İRFAN ATAŞ", "m": "MARMARA", "t": "0 506 1549215"},
-    {"p": "16 M 00064", "i": "LOKMAN TURGAY", "m": "GÜMÜŞHANE", "t": "0 536 2698437"},
-    {"p": "16 M 00067", "i": "MEHMET TUNA", "m": "İNEGÖL", "t": "0 537 4505009"},
-    {"p": "16 M 00068", "i": "VEYSİ ADNAN YÜKSEL", "m": "MARDİN", "t": "0 532 6427537"},
-    {"p": "16 M 00070", "i": "MUSTAFA NERGİZ", "m": "ERZİNCAN", "t": "0532 4748685"},
-    {"p": "16 M 00071", "i": "YILMAZ ÇOLHAK", "m": "MARDİN", "t": "0 532 0657047"},
-    {"p": "16 M 00072", "i": "EDİM BOZKURT", "m": "MAZIDAĞI", "t": "0 537 6897347"},
-    {"p": "16 M 00074", "i": "AYŞEGÜL BURKAY", "m": "MARDİN", "t": "0 533 4276205"},
-    {"p": "16 M 00075-00065-066", "i": "ÖZKAN BOZKURT", "m": "MUŞ", "t": "0 536 4576815"},
-    {"p": "16 M 00076", "i": "SEÇKİN UMUR", "m": "MUŞ", "t": "0 532 4259265"},
-    {"p": "16 M 00077-00087", "i": "GÜLBAHAR MEN", "m": "MAZIDAĞI", "t": "0 539 4779192"},
-    {"p": "16 M 00078", "i": "ERCAN ZORBA", "m": "BURSA", "t": "0 535 4940525"},
-    {"p": "16 M 00079", "i": "GÖKHAN KAYA", "m": "BAKIRKÖY", "t": "0 532 2071114"},
-    {"p": "16 M 00080", "i": "ERKAN ZORBA", "m": "BOZÜYÜK", "t": "0 532 2154168"},
-    {"p": "16 M 00081", "i": "ALİ BURKAY", "m": "VİRANŞEHİR", "t": "0 544 2894234"},
-    {"p": "16 M 00082", "i": "MEHMET YERTÜM", "m": "MARDİN", "t": "0 537 4626049"},
-    {"p": "16 M 00083-00095", "i": "AHMET NEDİR", "m": "GÜRSU", "t": "0 533 3461839"},
-    {"p": "16 M 00084", "i": "MEHMET BEŞİR KELEŞ", "m": "AVCILAR", "t": "0 532 6751939"},
-    {"p": "16 M 00085", "i": "AYLA ZEYBEL", "m": "BURSA", "t": "0 532 6412496"},
-    {"p": "16 M 00086", "i": "MEHMET TAHİR BİLEM", "m": "MARDİN", "t": "0 532 3425418"},
-    {"p": "16 M 00088", "i": "YADİGAR İLİĞ", "m": "MARDİN", "t": "0 535 2310199"},
-    {"p": "16 M 00089", "i": "ABDULKADİR TORAMAN", "m": "PÜTÜRGE", "t": "0 532 2327213"},
-    {"p": "16 M 00090", "i": "HÜSEYİN AKTAK", "m": "YENİŞEHİR", "t": "0 536 7354744"},
-    {"p": "16 M 00091", "i": "MEHMET KAYA", "m": "MARDİN", "t": "0532 2743050"},
-    {"p": "16 M 00093", "i": "MAHMUT PADIR", "m": "MARDİN", "t": "0 535 8586115"},
-    {"p": "16 M 00097", "i": "DURMUŞ ÇARIK", "m": "BURSA", "t": "0 532 5248628"},
-    {"p": "16 M 00099-00057", "i": "FARUK AMAK", "m": "MARDİN", "t": "0532 2771009"},
-    {"p": "16 M 00100", "i": "ŞENEL SEMİZ", "m": "KÖSE", "t": "0 532 2502374"},
-    {"p": "16 M 00101", "i": "MUSA AŞA", "m": "YILDIRIM", "t": "0 535 2475753"},
-    {"p": "16 M 00102", "i": "MUSTAFA YAYLA", "m": "İSTANBUL", "t": "0532 4329580"},
-    {"p": "16 M 00103", "i": "SUPHİ BOZKURT", "m": "MERCİMEKKA", "t": "0537 0386313"},
-    {"p": "16 M 00104", "i": "MURAT BAYRAM GEZER", "m": "SİNOP", "t": "0 533 7278997"},
-    {"p": "16 M 00105", "i": "NECDAT İŞLER", "m": "HINIS", "t": "0536 2795425"},
-    {"p": "16 M 00105", "i": "ÖMER KİREÇCİ", "m": "ERZURUM", "t": "0 532 4178062"},
-    {"p": "16 M 00106", "i": "MEHMET ATA EYBEK", "m": "MARDİN", "t": "0 535 8641564"},
-    {"p": "16 M 00109", "i": "ENGİN ŞÜLEKOĞLU", "m": "OF", "t": "0 532 4357344"},
-    {"p": "16 M 00111", "i": "ABUZER KAYA", "m": "HINIS", "t": "0 541 4986416"},
-    {"p": "16 M 00112-092-110-", "i": "İSAK POLAT", "m": "ÇAYIRLI", "t": "0 530 8815724"},
-    {"p": "16 M 00114", "i": "AYGÜL ÖZKAN", "m": "HASKÖY", "t": "0 542 7629246"},
-    {"p": "16 M 00115", "i": "CAFER DAMAR", "m": "MUTKİ", "t": "0 532 3871295"},
-    {"p": "16 M 00120-031-046", "i": "MUHAMMED DEMİR", "m": "MUŞ", "t": "0 534 9181981"},
-    {"p": "16 M 00121", "i": "HASAN KARAHAN", "m": "KAYAPA", "t": "0 532 7245443"},
-    {"p": "16 M 00121", "i": "SEYDİ EREK", "m": "BİTLİS", "t": "0 533 4722797"},
-    {"p": "16 M 00122", "i": "NURULLAH AYDOĞAN", "m": "ORHANELİ", "t": "0 535 3176909"},
-    {"p": "16 M 00127", "i": "ADNAN CEYLAN", "m": "SUŞEHRİ", "t": "0 530 4556397"},
-    {"p": "16 M 00129", "i": "ŞEYHMUS YALÇIN", "m": "MUŞ", "t": "0 532 6167684"},
-    {"p": "16 M 00130", "i": "MURAT ÖZTEN", "m": "DİYARBAKIR", "t": "0 532 4149274"},
-    {"p": "16 M 00130", "i": "DENİZ KAYAN", "m": "MARDİN", "t": "0 537 7907827"},
-    {"p": "16 M 00132-142", "i": "ERKAN DURSUN", "m": "BAYBURT", "t": "0 507 9465495"},
-    {"p": "16 M 00133", "i": "BÜLENT GÜLER", "m": "GEBZE", "t": "0 534 2323349"},
-    {"p": "16 M 00133", "i": "MESUT SEZGİN", "m": "HASKÖY", "t": "0 535 5646439"},
-    {"p": "16 M 00136", "i": "SEBAHATTİN KARDOĞAN", "m": "AHLAT", "t": "0534 3893633"},
-    {"p": "16 M 00138", "i": "MURAT YILDIRAK", "m": "MUŞ", "t": "0 538 0296204"},
-    {"p": "16 M 00138", "i": "AMİNE AKTAR", "m": "LICE", "t": "0 532 1349992"},
-    {"p": "16 M 00139", "i": "FİKRİ BAPLİ", "m": "MUŞ", "t": "0 505 3752737"},
-    {"p": "16 M 00139", "i": "MEHMET KABA", "m": "MUŞ", "t": "0 545 9166516"},
-    {"p": "16 M 00140", "i": "HALEF ÖZKAN", "m": "MUŞ", "t": "0 535 6614224"},
-    {"p": "16 M 00141", "i": "NİHAT SEYMEN", "m": "BURSA", "t": "0 536 4276711"},
-    {"p": "16 M 00143", "i": "İSMAİL ASLAN", "m": "BÜYÜKORHAN", "t": "0 535 6839227"},
-    {"p": "16 M 00145", "i": "MUAMMER YILDIZ", "m": "OLTU", "t": "0 532 2110586"},
-    {"p": "16 M 00148", "i": "FUAT GÜNEY", "m": "AŞKALE", "t": "0535 6369136"},
-    {"p": "16 M 00149", "i": "YUSUF DAMAR", "m": "MUTKİ", "t": "0 532 4197110"},
-    {"p": "16 M 00149-00115", "i": "ŞEFİK TUNÇ", "m": "MUTKİ", "t": "0 532 7708002"},
-    {"p": "16 M 00150", "i": "MEHMET ŞAKİR TOSUN", "m": "MUŞ", "t": "0 532 6345635"},
-    {"p": "16 M 00151", "i": "MEHMET NURİ KIZILARSLAN", "m": "MUŞ", "t": "0533 3266903"},
-    {"p": "16 M 00155", "i": "BURHAN GÜLER", "m": "HASKÖY", "t": "0 546 7713465"},
-    {"p": "16 M 00158", "i": "NECMETTİN KOTAN", "m": "MUŞ", "t": "0 536 6734916"},
-    {"p": "16 M 00159", "i": "RABİYA NUR YARDIM", "m": "SARIYER", "t": "0539 7498956"},
-    {"p": "16 M 00162", "i": "MEHMET REŞİT EKİN", "m": "HANİ", "t": "0 535 7474719"},
-    {"p": "16 M 00163", "i": "MELİHA KOTAN", "m": "MUŞ", "t": "0 532 5499776"},
-    {"p": "16 M 00165-00014", "i": "YUSUF KÖSE", "m": "KULU", "t": "0 532 6560510"},
-    {"p": "16 M 00166", "i": "OSMAN ASLAN", "m": "ORHANELİ", "t": "0 532 7057056"},
-    {"p": "16 M 00167", "i": "BARIŞ KORKMAZER", "m": "MUŞ", "t": "0 530 6149596"},
-    {"p": "16 M 00168-00019", "i": "ERSEL ER", "m": "KORKUT", "t": "0 551 1701849"},
-    {"p": "16 M 00170", "i": "MURAT TOSUN", "m": "KORKUT", "t": "0 536 3467749"},
-    {"p": "16 M 00172", "i": "MEHMET SIDDIK KOTAN", "m": "MUŞ", "t": "0 532 5499776"},
-    {"p": "16 M 00173", "i": "MUSA DÖNMEZ", "m": "MUŞ", "t": "0 536 2877883"},
-    {"p": "16 M 00179", "i": "MEHMET HANİF KARAKOYUN", "m": "MUTKİ", "t": "0 536 5093351"},
-    {"p": "16 M 00186", "i": "MEHMET KIZILARSLAN", "m": "KORKUT", "t": "0 538 6189788"},
-    {"p": "16 M 00187", "i": "ŞEREF ALAN", "m": "ÇINAR", "t": "0 535 5454894"},
-    {"p": "16 M 00190", "i": "HALİL İBRAHİM ALTINTAŞ", "m": "MARDİN", "t": "0 543 8080047"},
-    {"p": "16 M 00191", "i": "RAMAZAN DÖNMEZ", "m": "MUŞ", "t": "0 537 4407691"},
-    {"p": "16 M 00191", "i": "MURAT ÖGÜT", "m": "HASKÖY", "t": "0 553 0698549"},
-    {"p": "16 M 00193", "i": "HÜSEYİN YILMAZ", "m": "AKÇAABAT", "t": "05363855011"},
-    {"p": "16 M 00193", "i": "TEKİN NERGİZ", "m": "MUŞ", "t": "0 534 8495598"},
-    {"p": "16 M 00194-10005", "i": "BAYRAM TURHAN", "m": "ORHANELİ", "t": "0532 4060854"},
-    {"p": "16 M 00195", "i": "SAVAŞ PEKER", "m": "MUŞ", "t": "0 533 6405842"},
-    {"p": "16 M 00198", "i": "KADİR GÜLŞEN", "m": "ORHANELİ", "t": "0 536 4985553"},
-    {"p": "16 M 00200", "i": "KEMAL ORUÇ", "m": "ORHANELİ", "t": "0 530 519 32 76"},
-    {"p": "16 M 00203", "i": "DENİZ YUMUŞAK", "m": "ESKİŞEHİR", "t": "0 530 2342068"},
-    {"p": "16 M 00208", "i": "ABDULLAH TÜMERDEM", "m": "SİLVAN", "t": "0 530 6957646"},
-    {"p": "16 M 00208", "i": "ZELAL PINAR AKTAN", "m": "ELAZIĞ", "t": "0 532 3950118"},
-    {"p": "16 M 00209", "i": "ABDÜLBAKİ ÇELİK", "m": "BİTLİS", "t": "0533 4166393"},
-    {"p": "16 M 00210", "i": "KADİR OKTAY", "m": "BURSA", "t": "0 5323429220"},
-    {"p": "16 M 00213", "i": "HASAN DERMAN", "m": "BİTLİS", "t": "0 532 3429613"},
-    {"p": "16 M 00214", "i": "BURAK BAYTEMUR", "m": "YÜREĞİR", "t": "0 552 2130123"},
-    {"p": "16 M 00214", "i": "FADİME ÖZATA", "m": "BAYBURT", "t": "0 552 2130123"},
-    {"p": "16 M 00219", "i": "KAMİL ESEN", "m": "BURSA", "t": "0 542 4085141"},
-    {"p": "16 M 00221", "i": "HALİT DÖNMEZ", "m": "MUŞ", "t": "0536 811 62 79"},
-    {"p": "16 M 00222", "i": "ÇETİN KORKMAZER", "m": "MUŞ", "t": "0 532 2240991"},
-    {"p": "16 M 00226-00010-252", "i": "ESRA GÜZELTAŞ", "m": "BITLIS", "t": "0 553 0480013"},
-    {"p": "16 M 00231", "i": "MERVE ÖZATA", "m": "İSVİÇRE", "t": "0 552 2130123"},
-    {"p": "16 M 0023-10273", "i": "EROL KOTAN", "m": "MUŞ", "t": "0 533 5693437"},
-    {"p": "16 M 00235", "i": "NİMET ER", "m": "MUŞ", "t": "0 532 3454716"},
-    {"p": "16 M 00238", "i": "ARZU ŞİMŞEK", "m": "NİZİP", "t": "0 535 4320768"},
-    {"p": "16 M 00239-00253", "i": "DAVUT MEYDAN", "m": "KARTAL", "t": "0 538 4436834"},
-    {"p": "16 M 00242", "i": "CENGIZ EREK", "m": "BITLIS", "t": "0 535 7484833"},
-    {"p": "16 M 00242", "i": "İBRAHİM EREK", "m": "BİTLİS", "t": "0 546 9753756"},
-    {"p": "16 M 00243", "i": "RAFET OKULEVİ", "m": "BAYKAN", "t": "0 538 2232656"},
-    {"p": "16 M 00243", "i": "BAHATTİN BUDAK", "m": "MUŞ", "t": "0 533 5294046"},
-    {"p": "16 M 00245", "i": "SEVGİ ALEV", "m": "DİYARBAKIR", "t": "0 530 0180021"},
-    {"p": "16 M 00246", "i": "HALİL İBRAHİM ARZU", "m": "KELES", "t": "0 532 5150040"},
-    {"p": "16 M 00248", "i": "HAVVA ALP", "m": "ADANA", "t": "0 537 7407116"},
-    {"p": "16 M 00249", "i": "MUAMMER KÖK", "m": "TORTUM", "t": "VEFAT"},
-    {"p": "16 M 00250", "i": "YASEMİN ÖZBEY", "m": "M.K.PAŞA", "t": "0537 2668770"},
-    {"p": "16 M 00254", "i": "DAVUT ÖZKAN", "m": "MUŞ", "t": "0 552 2327922"},
-    {"p": "16 M 00254", "i": "ARJIN SÖNMEZ", "m": "VARTO", "t": "0 541 3640049"},
-    {"p": "16 M 00255", "i": "HAKİM KOTAN", "m": "MUŞ", "t": "0 530 0441554"},
-    {"p": "16 M 00256", "i": "AHMET SİRAÇ MEN", "m": "MAZIDAĞI", "t": "0 541 8874454"},
-    {"p": "16 M 00258", "i": "AYŞE BİLGİN", "m": "MUŞ", "t": "0 507 9173233"},
-    {"p": "16 M 00258", "i": "ABDULKADİR YALÇIN", "m": "MUŞ", "t": "0 546 2619811"},
-    {"p": "16 M 00262", "i": "ESET ÖZKAN", "m": "MUŞ", "t": "0 532 7629246"},
-    {"p": "16 M 00265", "i": "CUMALI ALP", "m": "ÇÜNGÜŞ", "t": "0 537 3997321"},
-    {"p": "16 M 00268", "i": "ŞÜKRÜ DÜŞ", "m": "ORHANELİ", "t": "0 533 7150650"},
-    {"p": "16 M 00270", "i": "MEHMET GÖKSU", "m": "KELES", "t": "0 532 3151607"},
-    {"p": "16 M 00271", "i": "MEHMET CÜNEYT KOTAN", "m": "MUŞ", "t": "0 506 6925148"},
-    {"p": "16 M 00273", "i": "MELİH GEÇİT", "m": "BURSA", "t": "0532 3958035"},
-    {"p": "16 M 00276-10271-272", "i": "MUSTAFA KOÇDEMİR", "m": "ORHANELİ", "t": "0 537 8722944"},
-    {"p": "16 M 00277", "i": "HASAN YÖRÜMEZ", "m": "BURSA", "t": "0 537 7201744"},
-    {"p": "16 M 00279", "i": "GÜLMEHMET ARSLAN", "m": "MUŞ", "t": "0 536 3944969"},
-    {"p": "16 M 00280", "i": "CEVDET BAPLİ", "m": "MUŞ", "t": "0 532 7260892"},
-    {"p": "16 M 00281", "i": "YUSUF ENGÜDAROĞLU", "m": "OSMANGAZİ", "t": "0 538 9342667"},
-    {"p": "16 M 00282", "i": "EDİP SAĞCAN", "m": "MARDİN", "t": "0 532 4470569"},
-    {"p": "16 M 00283-10022", "i": "ALİ RIZA KOCAMAN", "m": "MUŞ", "t": "0 533 5674594"},
-    {"p": "16 M 00284", "i": "ALİ SEYMEN", "m": "ÇALI", "t": "0 536 4304551"},
-    {"p": "16 M 00286", "i": "NURETTİN ORUÇ", "m": "KARACABEY", "t": "0532 4555855"},
-    {"p": "16 M 00286", "i": "TAHSİN ÖZTÜRK", "m": "KIRCAALİ", "t": "0 532 4280122"},
-    {"p": "16 M 00288", "i": "CAFER ÖZKAN", "m": "MUŞ", "t": "0 535 6614224"},
-    {"p": "16 M 00295", "i": "MUHSİN DURMUŞ", "m": "LİRT", "t": "0 537 3955271"},
-    {"p": "16 M 00296", "i": "ÖMER ARSLAN", "m": "KORKUT", "t": "0 544 5601275"},
-    {"p": "16 M 00299", "i": "EYUP ALP", "m": "ÇÜNGÜŞ", "t": "0 546 7148621"},
-    {"p": "16 M 00303", "i": "FATİH TEKİN", "m": "HASKÖY", "t": "0 535 9360903"},
-    {"p": "16 M 00304", "i": "CETIN ÇAKIR", "m": "MUŞ", "t": "0 538 5591697"},
-    {"p": "16 M 00306-10145", "i": "RAMAZAN CEYLAN", "m": "MADEN", "t": "0 532 5983123"},
-    {"p": "16 M 00309", "i": "ORHAN İNAN", "m": "BİTLİS", "t": "0 533 4228116"},
-    {"p": "16 M 00313", "i": "SANİ KARDAŞ", "m": "BİTLİS", "t": "0532 4055186"},
-    {"p": "16 M 00315", "i": "FAYSAL ÖZCAN", "m": "MUŞ", "t": "0 532 5472743"},
-    {"p": "16 M 00315", "i": "ÖMER İŞCEN", "m": "KORKUT", "t": "0 535 8994947"},
-    {"p": "16 M 00318", "i": "MUSTAFA YENİDOĞDU", "m": "NİZİP", "t": "0 532 7131329"},
-    {"p": "16 M 00318", "i": "İHSAN KURT", "m": "DİYARBAKIR", "t": "0537 8346570"},
-    {"p": "16 M 00319", "i": "ŞERAFETTİN DÖNMEZ", "m": "MUŞ", "t": "0536 4849714"},
-    {"p": "16 M 00323", "i": "MEHMET ATA ALKAN", "m": "DİYARBAKIR", "t": "0 532 7943179"},
-    {"p": "16 M 00325", "i": "SAİT YAŞAR", "m": "M.K.PAŞA", "t": "0 546 6767824"},
-    {"p": "16 M 00325", "i": "ŞABAN ÖZKUL", "m": "ORHANELİ", "t": "0 534 2876948"},
-    {"p": "16 M 00329", "i": "KAZİM ÖZMEN", "m": "BAYKAN", "t": "0 532 3708204"},
-    {"p": "16 M 00330", "i": "EMİN ELÇİN", "m": "MUTKİ", "t": "0 532 6513674"},
-    {"p": "16 M 00332", "i": "MEHMET DENİZ", "m": "MUŞ", "t": "0 532 7131317"},
-    {"p": "16 M 00334", "i": "FİKRET KOÇAK", "m": "MUŞ", "t": "0 536 4872457"},
-    {"p": "16 M 00337", "i": "ŞAHİN ARSLAN", "m": "DİYARBAKIR", "t": "0 541 9133360"},
-    {"p": "16 M 00338", "i": "ABDURRAHMAN İRVEN", "m": "DİYARBAKIR", "t": "0 532 4508178"},
-    {"p": "16 M 00340", "i": "ÖZCAN ARSLAN", "m": "HASKÖY", "t": "0 532 4637671"},
-    {"p": "16 M 00341", "i": "AYŞE YARDIM", "m": "İSTANBUL", "t": "0 532 5215268"},
-    {"p": "16 M 00342", "i": "NEMETULLAH İNANÇ", "m": "MUŞ", "t": "0 535 4617732"},
-    {"p": "16 M 00344", "i": "FAYSAL ÇOKAN", "m": "İSKENDERUN", "t": "0 533 6810144"},
-    {"p": "16 M 00344", "i": "MEHMET MUHSİN KELEŞ", "m": "MARDİN", "t": "0 533 6810141"},
-    {"p": "16 M 00347", "i": "HAMİT KANTARCI", "m": "İSPİR", "t": "0 532 3912379"},
-    {"p": "16 M 00347", "i": "ERHAN ERDUMAN", "m": "KARAYAZI", "t": "0 538 9837600"},
-    {"p": "16 M 00350-055", "i": "YÜKSEL ARSLAN", "m": "MUŞ", "t": "0 537 5116278"},
-    {"p": "16 M 00351", "i": "AYŞE AYDIN", "m": "BORÇKA", "t": "0 542 6169908"},
-    {"p": "16 M 00352", "i": "MUHAMMED FATIH DEMİR", "m": "NİLÜFER", "t": "0 543 2606127"},
-    {"p": "16 M 00352", "i": "SİNAN ÇINAR", "m": "DİYARBAKIR", "t": "0 536 4093080"},
-    {"p": "16 M 00355", "i": "MEHMET GÜRBÜZ", "m": "MARDİN", "t": "0 535 8569992"},
-    {"p": "16 M 10001", "i": "UMADETTİN OKULEVİ", "m": "BAYKAN", "t": "0 532 7405067"},
-    {"p": "16 M 10003", "i": "FERİT ÇELİK", "m": "BİTLİS", "t": "0539 6464013"},
-    {"p": "16 M 10004", "i": "ERGİN ÇELİK", "m": "BİTLİS", "t": "0532 4064856"},
-    {"p": "16 M 10006", "i": "HASAN HÜSEYİN TURHAN", "m": "BÜYÜKORHAN", "t": "0 530 5606505"},
-    {"p": "16 M 10007", "i": "RÜSTEM MUTLU", "m": "SUŞEHRİ", "t": "0533 5658733"},
-    {"p": "16 M 10008", "i": "MUAMMER TOSO", "m": "OSMANGAZİ", "t": "0 538 7038816"},
-    {"p": "16 M 10009", "i": "EKREM GÜRBÜZ", "m": "BİTLİS", "t": "0 535 3518360"},
-    {"p": "16 M 10010", "i": "BAYRAM GÜRBÜZ", "m": "BİTLİS", "t": "0 539 6951194"},
-    {"p": "16 M 10011", "i": "VAHDETTİN YARDIM", "m": "VAN", "t": "0 549 3707610"},
-    {"p": "16 M 10012", "i": "NİZAMEDDİN YARDIM", "m": "VAN", "t": "0 542 4519856"},
-    {"p": "16 M 10013", "i": "NUSRETTİN YARDIM", "m": "VAN", "t": "0 532 5215368"},
-    {"p": "16 M 10014", "i": "KEMALETTİN YARDIM", "m": "ÖZALP", "t": "0 542 4519856"},
-    {"p": "16 M 10015", "i": "AYŞE CAN", "m": "EYÜP", "t": "0 538 2951502"},
-    {"p": "16 M 10016-00200", "i": "MUSTAFA CAN", "m": "EYÜP", "t": "0 533 5703810"},
-    {"p": "16 M 10017", "i": "TURGUT KARAKURT", "m": "BURSA", "t": "0532 4456904"},
-    {"p": "16 M 10018", "i": "HAMDULLAH YILDIZ", "m": "MUŞ", "t": "0 532 6380273"},
-    {"p": "16 M 10019", "i": "FEYAZ ÖZKAN", "m": "HASKÖY", "t": "0 552 4318716"},
-    {"p": "16 M 10020", "i": "NİHAT HASANOĞLU", "m": "HAZRO", "t": "0 530 6957646"},
-    {"p": "16 M 10023", "i": "YUSUF İNAN", "m": "BİTLİS", "t": "0 535 7979164"},
-    {"p": "16 M 10025", "i": "AHMET BEYTAR", "m": "YENİŞEHİR", "t": "0532 4726447"},
-    {"p": "16 M 10026", "i": "AZİZ ALP", "m": "OSMANGAZİ", "t": "0 532 0672936"},
-    {"p": "16 M 10027", "i": "MEHMET FARUK AKTAŞ", "m": "MARDİN", "t": "0532 2703742"},
-    {"p": "16 M 10028", "i": "İLHAN AKTAŞ", "m": "MARDİN", "t": "0 544 3600447"},
-    {"p": "16 M 10029", "i": "REŞAT KAYGIN", "m": "MUŞ", "t": "0 507 7509649"},
-    {"p": "16 M 10031-32", "i": "MEHMET SALAH GÜNGÖR", "m": "MUŞ", "t": "0 506 1226473"},
-    {"p": "16 M 10033", "i": "BEDRETTİN ÖZDEMİR", "m": "MUŞ", "t": "0 533 4149235"},
-    {"p": "16 M 10034", "i": "MEHMET TUNÇ", "m": "MUŞ", "t": "0 532 6609051"},
-    {"p": "16 M 10035", "i": "İSMAİL MUTLU", "m": "YENİŞEHİR", "t": "0 536 2777452"},
-    {"p": "16 M 10036", "i": "MUHAMMED DÖNMEZ", "m": "MUŞ", "t": "0 505 9724849"},
-    {"p": "16 M 10038", "i": "YUSUF AKAY", "m": "BAYBURT", "t": "0 542 3961819"},
-    {"p": "16 M 10040", "i": "BÜLENT ŞAHİN", "m": "KELKİT", "t": "0 532 5600344"},
-    {"p": "16 M 10041", "i": "RAMAZAN ÇALAN", "m": "ŞİLBE", "t": "0 532 2218921"},
-    {"p": "16 M 10042", "i": "AZZEDİN KARAKUŞ", "m": "ŞİLBE", "t": "0 536 3571821"},
-    {"p": "16 M 10043", "i": "CEZMİ ÖZDEMİR", "m": "MUŞ", "t": "0 542 6400420"},
-    {"p": "16 M 10044", "i": "İDRİS DÖNMEZ", "m": "MUŞ", "t": "0 544 9101786"},
-    {"p": "16 M 10045", "i": "ENVER ÖNEL", "m": "MUŞ", "t": "0 532 6829549"},
-    {"p": "16 M 10046", "i": "İDRİS İPEK", "m": "EĞİL", "t": "0 533 6782168"},
-    {"p": "16 M 10047", "i": "NİLÜFER BULCA", "m": "BURSA", "t": "0537 3257085"},
-    {"p": "16 M 10048", "i": "BÜLENT BULCA", "m": "BURSA", "t": "0 533 3530428"},
-    {"p": "16 M 10049", "i": "HAKDAN SANCAK", "m": "VAN", "t": "0 532 5011644"},
-    {"p": "16 M 10050", "i": "ERCAN KIZILARSLAN", "m": "MUŞ", "t": "0 536 3219049"},
-    {"p": "16 M 10051", "i": "KAMIL TURHAN", "m": "ORHANELİ", "t": "0 533 6890470"},
-    {"p": "16 M 10052", "i": "AHMET TURHAN", "m": "BÜYÜKORHAN", "t": "0 532 4060854"},
-    {"p": "16 M 10053-00157", "i": "HASAN ALP", "m": "GERGER", "t": "0 532 6600086"},
-    {"p": "16 M 10054-00157", "i": "SALİH ALP", "m": "GERGER", "t": "0 535 8559510"},
-    {"p": "16 M 10055", "i": "ERCAN AKYÜZ", "m": "BILGE", "t": "0 532 6010141"},
-    {"p": "16 M 10056", "i": "CEM ANLATICI", "m": "BURSA", "t": "0 534 7632616"},
-    {"p": "16 M 10057", "i": "FERZENDE YILDIZ", "m": "HASKÖY", "t": "0 546 5538584"},
-    {"p": "16 M 10058", "i": "HAKAN YUMUŞAK", "m": "MAZIDAĞI", "t": "0 546 2962141"},
-    {"p": "16 M 10059", "i": "AYDIN BALKAYA", "m": "MUŞ", "t": "0 541 5417208"},
-    {"p": "16 M 10060", "i": "FIRAT BALKAYA", "m": "MUŞ", "t": "0 5314215444"},
-    {"p": "16 M 10061", "i": "KEREM AKALIN", "m": "MUŞ", "t": "0 553 0025500"},
-    {"p": "16 M 10062", "i": "BEDRETTİN ARSLAN", "m": "MUŞ", "t": "0 536 5783474"},
-    {"p": "16 M 10063", "i": "EMRAH İŞCEN", "m": "KORKUT", "t": "0 535 2647649"},
-    {"p": "16 M 10064", "i": "KENAN ARSLAN", "m": "MUŞ", "t": "0 539 2016449"},
-    {"p": "16 M 10065", "i": "GÜRSEL DENİZ", "m": "MUŞ", "t": "0 533 5205110"},
-    {"p": "16 M 10066", "i": "İLKAN ŞAHİN", "m": "GÜRSU", "t": "0 532 4825245"},
-    {"p": "16 M 10067", "i": "METİN BALKAYA", "m": "MUŞ", "t": "0 541 5417208"},
-    {"p": "16 M 10068", "i": "ŞAKİR ÖZKAN", "m": "MUŞ", "t": "0 542 7629246"},
-    {"p": "16 M 10069", "i": "MEHMET SABRİ GEÇER", "m": "MUŞ", "t": "0 536 6770136"},
-    {"p": "16 M 10070", "i": "ARİFE TEKİN ÇAYHAN", "m": "SANDIKLI", "t": "0 538 3466438"},
-    {"p": "16 M 10071", "i": "ALİ ÇALAN", "m": "DİYARBAKIR", "t": "0534 6676954"},
-    {"p": "16 M 10072", "i": "MUSTAFA TEKDEMİR", "m": "DİYARBAKIR", "t": "0 532 1584121"},
-    {"p": "16 M 10073", "i": "CİHAT AYDIN", "m": "MUDANYA", "t": "0 530 8948556"},
-    {"p": "16 M 10074", "i": "TURGUT ŞAHİN", "m": "VAN", "t": "0532 4476752"},
-    {"p": "16 M 10075", "i": "ORHAN BAYRAM", "m": "M.K.PAŞA", "t": "0 533 6411855"},
-    {"p": "16 M 10076", "i": "AHMET KÖKLÜ", "m": "MUŞ", "t": "0 536 3570249"},
-    {"p": "16 M 10077", "i": "YAVUZ ESER", "m": "OSMANGAZİ", "t": "0 533 2269272"},
-    {"p": "16 M 10079", "i": "FETHİ İŞİTTİREN", "m": "BURSA", "t": "0533 4359851"},
-    {"p": "16 M 10080", "i": "VEDAT SÖNMEZ", "m": "BURSA", "t": "0 537 2378624"},
-    {"p": "16 M 10081", "i": "NECATİ ÖZTÜRK", "m": "KIRCALİ", "t": "0 532 5659306"},
-    {"p": "16 M 10082", "i": "SEVİL ORUÇ", "m": "BURSA", "t": "0 539 3498802"},
-    {"p": "16 M 10083", "i": "SEDAT ARSLAN", "m": "KORKUT", "t": "0 535 2385293"},
-    {"p": "16 M 10084", "i": "ENES ARSLAN", "m": "KORKUT", "t": "0 537 5762649"},
-    {"p": "16 M 10085", "i": "MEHMET ARSLAN", "m": "DİYARBAKIR", "t": "0 546 8913446"},
-    {"p": "16 M 10086", "i": "İZZETTİN ARSLAN", "m": "DİYARBAKIR", "t": "0 534 0810007"},
-    {"p": "16 M 10087", "i": "MEHMET MİSBAH ALKAN", "m": "DİYARBAKIR", "t": "0 532 4151203"},
-    {"p": "16 M 10088", "i": "BİLAL ALKAN", "m": "DİYARBAKIR", "t": "0537 3723442"},
-    {"p": "16 M 10089", "i": "ÖZCAN ÖZTÜRK", "m": "HANAK", "t": "0 533 4665822"},
-    {"p": "16 M 10090", "i": "ÖMER SAKİN", "m": "ORHANELİ", "t": "0 535 6110924"},
-    {"p": "16 M 10091", "i": "YAŞAR BAYTEMÜR", "m": "BAYBURT", "t": "0 533 7619222"},
-    {"p": "16 M 10092", "i": "SEVİNÇ COŞKUN", "m": "AŞKALE", "t": "0 535 9827384"},
-    {"p": "16 M 10093", "i": "AHMET KURT", "m": "DİYARBAKIR", "t": "0 537 8346570"},
-    {"p": "16 M 10094", "i": "YUNUS ÖNEN", "m": "ÇINAR", "t": "0535 4858367"},
-    {"p": "16 M 10095", "i": "FİRDEVS BALICI", "m": "ORHANELİ", "t": "0 535 6876556"},
-    {"p": "16 M 10096", "i": "YUNUS KAPŞİGAY", "m": "MUŞ", "t": "0 538 8860477"},
-    {"p": "16 M 10098", "i": "SEDAT SERKAN KAÇAN", "m": "MUŞ", "t": "0 505 0437465"},
-    {"p": "16 M 10099", "i": "MUHAMMETBAHTİYA TEKİN", "m": "KORKUT", "t": "0 534 2550049"},
-    {"p": "16 M 10100", "i": "ŞAFAK AYYILDIZ", "m": "KELKİT", "t": "0 551 9506929"},
-    {"p": "16 M 10101", "i": "MEHMET YAŞAR DÖNMEZ", "m": "MUŞ", "t": "0535 3448075"},
-    {"p": "16 M 10102", "i": "MUHSİN DÖNMEZ", "m": "MUŞ", "t": "0 506 7359630"},
-    {"p": "16 M 10103", "i": "ENGİN KAYGIN", "m": "MUŞ", "t": "0 537 3489037"},
-    {"p": "16 M 10104", "i": "MEHMET NEDİM KAŞTAŞ", "m": "MUŞ", "t": "0 531 0241349"},
-    {"p": "16 M 10105-00319", "i": "MEDENİ DÖNMEZ", "m": "MUŞ", "t": "0 535 9694706"},
-    {"p": "16 M 10106", "i": "HÜSEYİN TUTKUN", "m": "BÜVETLİ", "t": "0 533 3613685"},
-    {"p": "16 M 10107", "i": "RECEP SEVİNÇ", "m": "BURSA", "t": "0 536 7650838"},
-    {"p": "16 M 10108", "i": "YAŞAR TEPELİOĞLU", "m": "İSTANBUL", "t": "0 532 5256831"},
-    {"p": "16 M 10109", "i": "ÖZCAN SAYLA", "m": "BURSA", "t": "0 535 3593182"},
-    {"p": "16 M 10110", "i": "SÜLEYMAN SAYLA", "m": "BURSA", "t": "0 532 7779295"},
-    {"p": "16 M 10111", "i": "DURAK ÖZAY", "m": "İSPİR", "t": "0 532 5634982"},
-    {"p": "16 M 10112", "i": "ÖNDER ERDUMAN", "m": "KARAYAZI", "t": "0 533 3698916"},
-    {"p": "16 M 10113", "i": "VEYSİ KAYNAR", "m": "MUŞ", "t": "0 536 9235645"},
-    {"p": "16 M 10114", "i": "MEHMET ŞERİF SELİK", "m": "İRZAK", "t": "0 533 2121491"},
-    {"p": "16 M 10115", "i": "MUSTAFA SAKİN", "m": "ORHANELİ", "t": "0 536 7843347"},
-    {"p": "16 M 10116-066", "i": "SELÇUK UMUR", "m": "MUŞ", "t": "0 531 7934870"},
-    {"p": "16 M 10117", "i": "YILMAZ KARADAĞ", "m": "IĞDIR", "t": "0 532 645 8989"},
-    {"p": "16 M 10118", "i": "BARIŞ BULUT", "m": "ŞAVŞAT", "t": "0 541 6184740"},
-    {"p": "16 M 10119", "i": "VEYSİ SEZGİN", "m": "CAYHAN", "t": "0 532 6345637"},
-    {"p": "16 M 10120", "i": "FEVZİ SEZGİN", "m": "MUŞ", "t": "05333074213"},
-    {"p": "16 M 10121", "i": "RAHMAN NEFİS", "m": "IĞDIR", "t": "0 536 4885342"},
-    {"p": "16 M 10122", "i": "ERKUT ERDEM", "m": "BURSA", "t": "0 533 0255333"},
-    {"p": "16 M 10123", "i": "NEDİP MURATAKAN", "m": "LICE", "t": "0 537 6121090"},
-    {"p": "16 M 10124", "i": "VEDAT ÖZKAN", "m": "MUŞ", "t": "0 535 5655129"},
-    {"p": "16 M 10125-126-008", "i": "MEHMET AYDEMİR", "m": "ORHANELİ", "t": "0 532 5680915"},
-    {"p": "16 M 10127", "i": "MİRZE MEHMET ARSLAN", "m": "MUŞ", "t": "0536 4344349"},
-    {"p": "16 M 10128", "i": "İLHAN ÖZMEN", "m": "MUŞ", "t": "0 553 0659049"},
-    {"p": "16 M 10129", "i": "SAADETTİN KETECİ", "m": "ERZURUM", "t": "0 536 8692563"},
-    {"p": "16 M 10130", "i": "KADRİ KARDAŞ", "m": "DİYARBAKIR", "t": "0 530 0602758"},
-    {"p": "16 M 10131", "i": "MEHMET NACİ DURGUN", "m": "MUTKİ", "t": "0 532 7962299"},
-    {"p": "16 M 10132", "i": "ŞÜKRÜ EREK", "m": "BİTLİS", "t": "0 535 5855992"},
-    {"p": "16 M 10134", "i": "MEMET ŞİRİN EVİN", "m": "SİİRT", "t": "0 532 7718689"},
-    {"p": "16 M 10135", "i": "FİKRİ KARADEMİR", "m": "TEKMAN", "t": "0532 3854215"},
-    {"p": "16 M 10136", "i": "MUHAMMET KARADEMİR", "m": "TEKMAN", "t": "0 533 1604767"},
-    {"p": "16 M 10137", "i": "GÜRSOY TURHAN", "m": "MUŞ", "t": "0 535 2712342"},
-    {"p": "16 M 10138", "i": "HALİM ZAİMOĞLU", "m": "OLTU", "t": "0 532 2110586"},
-    {"p": "16 M 10139", "i": "BİLAL MEMİŞOĞLU", "m": "RİZE", "t": "0 532 6628284"},
-    {"p": "16 M 10140", "i": "SAİM KOÇAK", "m": "BİTLİS", "t": "0 532 5959830"},
-    {"p": "16 M 10141", "i": "BEHÇET MEN", "m": "KOCAKENT", "t": "0535 3279812"},
-    {"p": "16 M 10142", "i": "SİNAN MEN", "m": "MAZIDAĞ", "t": "0 541 9467572"},
-    {"p": "16 M 10143", "i": "EROL GÜREL", "m": "ERZURUM", "t": "0 530 9346043"},
-    {"p": "16 M 10144", "i": "ŞEMSETTİN YILDIZ", "m": "BİTLİS", "t": "0 533 0324213"},
-    {"p": "16 M 10146", "i": "TOLGA CEYLAN", "m": "MADEN", "t": "0 553 2806336"},
-    {"p": "16 M 10147", "i": "SEYİDGÜL ER", "m": "MUŞ", "t": "0 532 6356295"},
-    {"p": "16 M 10148", "i": "ÖMER CANBAY", "m": "AHLAT", "t": "0535 4632627"},
-    {"p": "16 M 10149", "i": "ESER TAVLİ", "m": "MUŞ", "t": "0 536 3573649"},
-    {"p": "16 M 10150", "i": "EROL FERIK", "m": "ORHANELİ", "t": "0 533 2042029"},
-    {"p": "16 M 10151", "i": "HATİCE BÖRÜ", "m": "DİYARBAKIR", "t": "0 532 2451110"},
-    {"p": "16 M 10153", "i": "YAVUZ ÇAKMAK", "m": "TERCAN", "t": "0 532 3446073"},
-    {"p": "16 M 10154", "i": "HAMDULLAH ÖZKAN", "m": "MUŞ", "t": "0 536 7136040"},
-    {"p": "16 M 10155", "i": "MESUT FERİK", "m": "ORHANELİ", "t": "0 537 8112201"},
-    {"p": "16 M 10157", "i": "BURHAN BALKAYA", "m": "MUŞ", "t": "0 537 3557142"},
-    {"p": "16 M 10158", "i": "KENAN ÖNGEL", "m": "GÖLE", "t": "0 5368142608"},
-    {"p": "16 M 10159-160-00316", "i": "MURAT IŞIK", "m": "BULANIK", "t": "0532 4060530"},
-    {"p": "16 M 10161", "i": "MESUT GEZEK", "m": "BURSA", "t": "0 534 4428837"},
-    {"p": "16 M 10161", "i": "KADRİ ÇİFÇİLER", "m": "BURSA", "t": "0 531 8524001"},
-    {"p": "16 M 10162", "i": "OĞUZHAN DÜNDAR", "m": "ERZİNCAN", "t": "0 539 2292370"},
-    {"p": "16 M 10163", "i": "AHMET OSKAY", "m": "TRABZON", "t": "0 533 3422156"},
-    {"p": "16 M 10164", "i": "ADEM KARADEMİR", "m": "YILDIRIM", "t": "0 538 6918834"},
-    {"p": "16 M 10165", "i": "NEVZAT ERDOĞAN", "m": "BAYKAN", "t": "0 544 5611656"},
-    {"p": "16 M 10166", "i": "ÜVEYS KEZKEÇ", "m": "MUŞ", "t": "0 551 5912349"},
-    {"p": "16 M 10167", "i": "FATİH KEZKEÇ", "m": "MUŞ", "t": "0 534 3221949"},
-    {"p": "16 M 10168", "i": "HASANALİ ÖZTÜRK", "m": "OSMANGAZİ", "t": "0 532 0585586"},
-    {"p": "16 M 10169", "i": "MEHMET KARABULUT", "m": "SİVEREK", "t": "0 532 6632539"},
-    {"p": "16 M 10170", "i": "MEHMET KARABULUT", "m": "BURSA", "t": "0 549 4635863"},
-    {"p": "16 M 10171", "i": "ALİ GÜLER", "m": "ORHANELİ", "t": "0 530 7832262"},
-    {"p": "16 M 10172", "i": "ORHAN ŞAHİN", "m": "ORHANELİ", "t": "0536 6343738"},
-    {"p": "16 M 10173", "i": "OSMAN KORKMAZER", "m": "MUŞ", "t": "0 532 7641605"},
-    {"p": "16 M 10174", "i": "ABDURRAZZAK KURTAY", "m": "BAYKAN", "t": "0 537 9392614"},
-    {"p": "16 M 10175", "i": "MEHMET SIDDIK PEKER", "m": "MUŞ", "t": "0 532 6808478"},
-    {"p": "16 M 10176", "i": "TAHSİN PEKER", "m": "MUŞ", "t": "0 532 3269737"},
-    {"p": "16 M 10177", "i": "HÜSEYİN GÖKSU", "m": "KELES", "t": "0 535 8973644"},
-    {"p": "16 M 10178", "i": "HAKAN GÖKSU", "m": "KELES", "t": "0 507 0446895"},
-    {"p": "16 M 10179", "i": "ŞEYHMUS BAŞ", "m": "BİLGE", "t": "0 532 5788147"},
-    {"p": "16 M 10180", "i": "HAŞİM KARAHAN", "m": "BURSA", "t": "0 532 7245443"},
-    {"p": "16 M 10181", "i": "ZÜLKİF YUMUŞAK", "m": "DİYARBAKIR", "t": "0 532 2875707"},
-    {"p": "16 M 10182", "i": "METİN DURMAZ", "m": "BURSA", "t": "0 543 8501964"},
-    {"p": "16 M 10183", "i": "SELAHATTİN ENGÜDAROĞLU", "m": "BİTLİS", "t": "0 533 3440216"},
-    {"p": "16 M 10184", "i": "KAMRAN YILDIZ", "m": "BİTLİS", "t": "0535 4023826"},
-    {"p": "16 M 10185", "i": "MURAT DEMİR", "m": "NİLÜFER", "t": "0 553 0961649"},
-    {"p": "16 M 10186", "i": "MEHMET EMİN ÇINAR", "m": "DİYARBAKIR", "t": "0 536 5999341"},
-    {"p": "16 M 10187", "i": "ŞEFİK DİNÇER", "m": "HASKÖY", "t": "0 535 4620006"},
-    {"p": "16 M 10188", "i": "ABDURRAHIM GÜRKAN", "m": "MUŞ", "t": "0 536 4179435"},
-    {"p": "16 M 10190", "i": "AYDIN ARSLAN", "m": "KORKUT", "t": "0 537 2306539"},
-    {"p": "16 M 10191-0052", "i": "ATİYE KELEŞ", "m": "MARDİN", "t": "0 533 6810141"},
-    {"p": "16 M 10192-00354", "i": "HİLAL BURKAY", "m": "MARDİN", "t": "0 536 6152029"},
-    {"p": "16 M 10193", "i": "ERKAN GÜLER", "m": "HASKÖY", "t": "0 536 6920176"},
-    {"p": "16 M 10194", "i": "ERHAN GÜLER", "m": "MUŞ", "t": "0 535 2955877"},
-    {"p": "16 M 10195", "i": "AGİT ÖZKAN", "m": "HASKÖY", "t": "0 532 7629246"},
-    {"p": "16 M 10196", "i": "MEHMET ZEKİ ÖZKAN", "m": "HASKÖY", "t": "0 532 7087236"},
-    {"p": "16 M 10197", "i": "SAİT TOSUN", "m": "MUŞ", "t": "0 536 8974549"},
-    {"p": "16 M 10198", "i": "SIRACETTİN BALKAYA", "m": "MUŞ", "t": "0 532 1575349"},
-    {"p": "16 M 10199", "i": "LEVENT HAKER", "m": "BURSA", "t": "0 533 5627328"},
-    {"p": "16 M 10200", "i": "SADİ EREN", "m": "BURSA", "t": "0 532 3160371"},
-    {"p": "16 M 10201", "i": "KADİR KUTLU", "m": "TERCAN", "t": "0 536 5866885"},
-    {"p": "16 M 10202", "i": "İSMAİL KORKMAZ", "m": "BURSA", "t": "0 532 2246091"},
-    {"p": "16 M 10203", "i": "HÜSEYİN GEÇER", "m": "MUŞ", "t": "0 536 6770136"},
-    {"p": "16 M 10204", "i": "KADRİ BİÇER", "m": "VAN", "t": "0 543 2510417"},
-    {"p": "16 M 10205", "i": "YAHYA EREK", "m": "BİTLİS", "t": "0 505 6609092"},
-    {"p": "16 M 10206", "i": "ÖMER KARABAŞ", "m": "OSMANGAZİ", "t": "0 533 5576416"},
-    {"p": "16 M 10207", "i": "M.SIRIN KOTAN", "m": "MUŞ", "t": "0 530 1757946"},
-    {"p": "16 M 10209", "i": "NEDİM ELÇİN", "m": "HANİ", "t": "0 534 5991621"},
-    {"p": "16 M 10210", "i": "NACİ KORKMAZER", "m": "MUŞ", "t": "0 532 2240991"},
-    {"p": "16 M 10211", "i": "EKREM ÖTER", "m": "MARDİN", "t": "0 530 3218347"},
-    {"p": "16 M 10212", "i": "OKTAY ÇELİK", "m": "MUŞ", "t": "0 532 2932294"},
-    {"p": "16 M 10213", "i": "RIDVAN DÖNMEZ", "m": "MUŞ", "t": "0 538 8822367"},
-    {"p": "16 M 10215-10216", "i": "İRFAN ÇİMCIK", "m": "MUŞ", "t": "0532 2622368"},
-    {"p": "16 M 10217", "i": "KENAN DÖNMEZ", "m": "MUŞ", "t": "0 545 9567749"},
-    {"p": "16 M 10218", "i": "İBRAHİM MEN", "m": "MAZIDAĞI", "t": "0 535 0624063"},
-    {"p": "16 M 10219", "i": "ONUR KAYA", "m": "AĞRI", "t": "0 532 4115253"},
-    {"p": "16 M 10220", "i": "CANER KAYA", "m": "AĞRI", "t": "0 532 4115253"},
-    {"p": "16 M 10222", "i": "YUSUF ABAY", "m": "BURSA", "t": "0 536 3142109"},
-    {"p": "16 M 10223", "i": "NASIR YUMUŞAK", "m": "BALPINAR", "t": "0537 2578415"},
-    {"p": "16 M 10224", "i": "BARIŞ GÜZELTAŞ", "m": "BİTLİS", "t": "0 542 3451172"},
-    {"p": "16 M 10226", "i": "ÖNDER GÜZELTAŞ", "m": "MUTKİ", "t": "0 532 5012583"},
-    {"p": "16 M 10227", "i": "DAVUT YAPICI", "m": "DİYARBAKIR", "t": "0 533 8103239"},
-    {"p": "16 M 10228", "i": "ROHAT YUMUŞAK", "m": "MAZIDAĞI", "t": "0 542 5788798"},
-    {"p": "16 M 10229", "i": "YILMAZ ESEN", "m": "KELES", "t": "0 532 4774611"},
-    {"p": "16 M 10230", "i": "KEMALETTİN BERK", "m": "IĞDIR", "t": "0 537 4576331"},
-    {"p": "16 M 10231", "i": "ELİF KÖSE", "m": "LİMBURG", "t": "0 532 6560510"},
-    {"p": "16 M 10232", "i": "MESUT AYDIN", "m": "ORHANELİ", "t": "0 541 5691280"},
-    {"p": "16 M 10233", "i": "İSMET USLU", "m": "BURSA", "t": "0 532 4871910"},
-    {"p": "16 M 10234-00219", "i": "AHMET CEMİL IŞIK", "m": "BURSA", "t": "0 536 7108316"},
-    {"p": "16 M 10235-10236", "i": "CANİP GÜLMEZ", "m": "BURSA", "t": "0 532 3429220"},
-    {"p": "16 M 10237", "i": "ERKAN KIZILARSLAN", "m": "KORKUT", "t": "0 537 6421649"},
-    {"p": "16 M 10238", "i": "AYTAÇ YÖRÜMEZ", "m": "BURSA", "t": "0 554 2364674"},
-    {"p": "16 M 10239", "i": "SALİM ENGÜDAROĞLU", "m": "BİTLİS", "t": "0 534 5601983"},
-    {"p": "16 M 10240-00201", "i": "ABDULGAFUR GEYLANI", "m": "BAYKAN", "t": "0 532 272 52 41"},
-    {"p": "16 M 10241", "i": "MUSTAFA ŞAHİN", "m": "ELEŞKİRT", "t": "0 535 9660215"},
-    {"p": "16 M 10242", "i": "AHMET ÖZKORKMAZ", "m": "EĞİL", "t": "0 538 3784302"},
-    {"p": "16 M 10243", "i": "TAKYEDDİN OKULEVİ", "m": "BAYKAN", "t": "0 533 3800456"},
-    {"p": "16 M 10245", "i": "KÖKSAL DÜNDAR", "m": "KELKİT", "t": "0 536 3919129"},
-    {"p": "16 M 10246", "i": "AHMET ÇOBUR", "m": "ELAZIĞ", "t": "05536294102"},
-    {"p": "16 M 10247", "i": "İSMAİL ÖZAN", "m": "MANİSA", "t": "0 543 2890175"},
-    {"p": "16 M 10248", "i": "SÜLEYMAN ERDUMAN", "m": "KARAYAZI", "t": "0 534 2612761"},
-    {"p": "16 M 10249", "i": "FEVZİ ÖZAY", "m": "BURSA", "t": "0535 6916832"},
-    {"p": "16 M 10250", "i": "KADRİ ÖZAY", "m": "BURSA", "t": "0 530 8937730"},
-    {"p": "16 M 10251", "i": "YAHYA TURHAN", "m": "ORHANELİ", "t": "0 553 0558582"},
-    {"p": "16 M 10252", "i": "ZEKERİYA TURHAN", "m": "BÜYÜKORHAN", "t": "0 534 6866276"},
-    {"p": "16 M 10253", "i": "CAHİT AKDENİZ", "m": "KORKUT", "t": "0 533 3592574"},
-    {"p": "16 M 10254", "i": "RİZVAN KOCAK", "m": "MİRYANİS", "t": "0 533 3656899"},
-    {"p": "16 M 10255", "i": "İSMAİL KAYA", "m": "MARDİN", "t": "0532 2139826"},
-    {"p": "16 M 10256", "i": "AZİZ ÖZKAN", "m": "ORHANELİ", "t": "0 536 4773198"},
-    {"p": "16 M 10257", "i": "REYSI KARACA", "m": "MUŞ", "t": "0 537 2620138"},
-    {"p": "16 M 10258", "i": "KAMİL MEHΜΕΤ AYDIN", "m": "ORHANELİ", "t": "0 541 5691280"},
-    {"p": "16 M 10259", "i": "ÖZCAN ASLAN", "m": "BÜYÜKORHAN", "t": "0 537 6393898"},
-    {"p": "16 M 10260", "i": "CİHAT ASLAN", "m": "BÜYÜKORHAN", "t": "0 543 4693483"},
-    {"p": "16 M 10261", "i": "ERTAN EYLİ", "m": "BURSA", "t": "0532 2264389"},
-    {"p": "16 M 10262", "i": "MUSTAFA ÇAKANLAR", "m": "BURSA", "t": "0 533 5501859"},
-    {"p": "16 M 10263", "i": "FATMA ÇOBUR", "m": "ELAZIĞ", "t": "0 553 6294102"},
-    {"p": "16 M 10264", "i": "EMİN KOTAN", "m": "MUŞ", "t": "0 542 5300829"},
-    {"p": "16 M 10265", "i": "HAYRULLAH YILMAZ", "m": "BURSA", "t": "0 532 1553252"},
-    {"p": "16 M 10266-00021", "i": "ÖZBEY KOTAN", "m": "MUŞ", "t": "0 532 7205851"},
-    {"p": "16 M 10267", "i": "AHMET ERDAL YILMAZ", "m": "DİYARBAKIR", "t": "0 530 0317420"},
-    {"p": "16 M 10268", "i": "BÜLENT YILMAZ", "m": "DİYARBAKIR", "t": "0 535 6290992"},
-    {"p": "16 M 10269-10270", "i": "RIDVAN YALÇIN", "m": "MUŞ", "t": "0 532 6712173"},
-    {"p": "16 M 10274", "i": "YÜKSEL SOYLU", "m": "TATVAN", "t": "0 536 7919997"},
-    {"p": "16 M 10275", "i": "NAHİT BAPLİ", "m": "MUŞ", "t": "0 545 9091649"},
-    {"p": "16 M 10276", "i": "KEREM BAPLİ", "m": "KOCATARLA", "t": "0 532 6356204"},
-    {"p": "16 M 10277", "i": "YUNUS DÖNMEZ", "m": "MUŞ", "t": "0 537 5826298"},
-    {"p": "16 M 10278", "i": "İSMET AKDAĞ", "m": "BAYBURT", "t": "0 532 6061669"},
-    {"p": "16 M 10281", "i": "ŞABAN AKTAR", "m": "HARTA", "t": "0 532 1349992"},
-    {"p": "16 M 10282", "i": "NİHAT OKULEVİ", "m": "BAYKAN", "t": "0 533 2559480"},
-    {"p": "16 M 10283", "i": "MUSTAFA ACELECİ", "m": "BURSA", "t": "0 532 5482770"},
-    {"p": "16 M 10284-00183", "i": "İDRİS GÜRKAN", "m": "KORKUT", "t": "0 531 9709751"},
-    {"p": "16 M 10285", "i": "ÖMER KEZKEÇ", "m": "MUŞ", "t": "0 553 6530949"},
-    {"p": "16 M 10286", "i": "TURGAY YARDIM", "m": "VAN", "t": "0 542 4519856"},
-    {"p": "16 M 10287-10288", "i": "MUHAMMED EMRE ALPAR", "m": "DİYARBAKIR", "t": "0 555 8930399"},
-    {"p": "16 M 10289-10290-029", "i": "BURHAN GÜZELTAŞ", "m": "BİTLİS", "t": "0 543 9497084"},
-    {"p": "16 M 10291-10292", "i": "MUZAFFER AKTAŞ", "m": "BİTLİS", "t": "0534 3675354"},
-    {"p": "16M0073-113-10279-", "i": "ZEYNİ BURKAY", "m": "MARDİNKALA", "t": "0 533 437 62 05"},
-    {"p": "16M0107-069-0175-094", "i": "DAVUT İLİĞ", "m": "MARDİN", "t": "0 535 2310199"},
-    {"p": "Belirtilmemiş", "i": "OSMAN AYDIN", "m": "BURSA", "t": "0 533 3252702"},
-    {"p": "Belirtilmemiş", "i": "RAFET EYLİ", "m": "BURSA", "t": "0 533 6027296"},
-    {"p": "Belirtilmemiş", "i": "ŞİNASİ YILDIZ", "m": "MUŞ", "t": "0 531 3592574"},
-    {"p": "Belirtilmemiş", "i": "SELİM ERTAN", "m": "RİZE", "t": "0 535 3735107"},
-    {"p": "Belirtilmemiş", "i": "HASAN ÇİÇEK", "m": "ERGANİ", "t": "0 533 4614744"},
-    {"p": "Belirtilmemiş", "i": "MEHMET YENİŞEHİR", "m": "YENİŞEHİR", "t": "0 5337730122"},
-    {"p": "Belirtilmemiş", "i": "MUHAMMET HANEFİ ATLI", "m": "BAYBURT", "t": "0 544 2690669"},
-    {"p": "Belirtilmemiş", "i": "CEMİL CAN", "m": "TİREBOLU", "t": "0 533 3327192"},
-    {"p": "Belirtilmemiş", "i": "İSMET ATİK", "m": "PAZARCIK", "t": "0 543 5434327"},
-    {"p": "Belirtilmemiş", "i": "TUNCAY DONAT", "m": "BURSA", "t": "0 533 6120506"},
-    {"p": "Belirtilmemiş", "i": "BAHRİ TİTİZ", "m": "BURSA", "t": "0 532 4881375"},
-    {"p": "Belirtilmemiş", "i": "M.SAIT BAŞ", "m": "BİLGE", "t": "0 533 5196773"},
-    {"p": "Belirtilmemiş", "i": "MEHMET ERDEM", "m": "BURSA", "t": "0 533 3547979"},
-    {"p": "Belirtilmemiş", "i": "KEREM GÜRBÜZ", "m": "BİTLİS", "t": "0 537 3693675"},
-    {"p": "Belirtilmemiş", "i": "SÖNMEZ SARIKAYA", "m": "REFAHİYE", "t": "0532 3525485"},
-    {"p": "Belirtilmemiş", "i": "MUSTAFA ASLAN", "m": "ORHANELİ", "t": "0 532 3245387"},
-    {"p": "Belirtilmemiş", "i": "NEVZAT ÇELİK", "m": "MUTKİ", "t": "0 532 7677798"},
-    {"p": "Belirtilmemiş", "i": "İBRAHİM GÖKDUMAN", "m": "KARTAL", "t": "0 536 8408462"},
-    {"p": "Belirtilmemiş", "i": "OSMAN BAYTEMUR", "m": "SİVRİCE", "t": "0 546 2770123"},
-    {"p": "Belirtilmemiş", "i": "MEHMET SELİM TAŞKÖPRÜ", "m": "MUŞ", "t": "0 533 4001853"},
-    {"p": "Belirtilmemiş", "i": "RIDVAN SÖSUNCU", "m": "KURTALAN", "t": "0 532 4127278"},
-    {"p": "Belirtilmemiş", "i": "ÖMER FARUK DEMİR", "m": "MARDİN", "t": "0 533 9221888"},
-    {"p": "Belirtilmemiş", "i": "GÖKHAN KURÇİN", "m": "BURSA", "t": "0 532 7164998"},
-    {"p": "Belirtilmemiş", "i": "MUSA MEN", "m": "MAZIDAĞI", "t": "0 535 9464732"},
-    {"p": "Belirtilmemiş", "i": "MEHMET EYYÜP ASRAĞ", "m": "SİVEREK", "t": "0 532 4019377"},
-    {"p": "Belirtilmemiş", "i": "METİN YILDIZ", "m": "BİTLİS", "t": "0 536 3203659"},
-    {"p": "Belirtilmemiş", "i": "EMRE KEZKEÇ", "m": "MUŞ", "t": "0 507 3649849"},
-    {"p": "Belirtilmemiş", "i": "ABDULLAH ÖNEL", "m": "MUŞ", "t": "0 537 5210199"},
-    {"p": "Belirtilmemiş", "i": "FERIT GÜZELTAŞ", "m": "BİTLİS", "t": "0 533 2212801"},
-    {"p": "Belirtilmemiş", "i": "MEHMET CANŞI", "m": "MARDİN", "t": "0 537 2521100"},
-    {"p": "Belirtilmemiş", "i": "İHSAN KOCAMAN", "m": "MUŞ", "t": "0 533 6276882"},
-    {"p": "Belirtilmemiş", "i": "REŞİT KOTAN", "m": "MUŞ", "t": "0 546 4173745"},
-    {"p": "Belirtilmemiş", "i": "SABĞATULLAH OKULEVİ", "m": "BAYKAN", "t": "0533 7791124"},
-    {"p": "Belirtilmemiş", "i": "AYHAN BALKAYA", "m": "MUŞ", "t": "0 533 4966268"},
-    {"p": "Belirtilmemiş", "i": "MEHMET CİHAN KOTAN", "m": "MUŞ", "t": "0 539 7092222"},
-    {"p": "Belirtilmemiş", "i": "AZAD KARDAŞ", "m": "DİYARBAKIR", "t": "0 538 5497057"},
-    {"p": "Belirtilmemiş", "i": "FAHRETTİN KEZKEÇ", "m": "MUŞ", "t": "0 533 3713249"},
-    {"p": "Belirtilmemiş", "i": "HÜSEYİN MACAR", "m": "BURSA", "t": "0 532 5656726"},
-    {"p": "Belirtilmemiş", "i": "ÖMER FARUK DOĞRU", "m": "OSMANGAZİ", "t": "0539 8455076"},
-    {"p": "Belirtilmemiş", "i": "MEVLÜT KORKMAZ", "m": "OLTU", "t": "0 535 7368260"},
-    {"p": "Belirtilmemiş", "i": "ABDULGAFUR KAYGIN", "m": "MUŞ", "t": "0 533 7654598"},
-    {"p": "Belirtilmemiş", "i": "TUBA KELEŞ", "m": "MARDİN", "t": "0533 3405736"},
-    {"p": "Belirtilmemiş", "i": "TEKİN UÇAR", "m": "ŞENKAYA", "t": "0 532 6743599"},
-    {"p": "Belirtilmemiş", "i": "MEHMET REFİK ALKAN", "m": "DİYARBAKIR", "t": "0 535 2197429"},
-    {"p": "Belirtilmemiş", "i": "SABAHATTİN KARDAŞ", "m": "MUŞ", "t": "0 535 6077328"},
-    {"p": "Belirtilmemiş", "i": "MEHMET ŞAKİR YUMUŞAK", "m": "DİYARBAKIR", "t": "0 505 7400603"},
-    {"p": "Belirtilmemiş", "i": "AYSUN ARADEMİR", "m": "BURSA", "t": "0 542 6150168"},
-    {"p": "Belirtilmemiş", "i": "MURAT ARSLAN", "m": "KORKUT", "t": "0 501 0831649"},
-    {"p": "Belirtilmemiş", "i": "YILMAZ DEMİR", "m": "GERGER", "t": "0 536 9699926"},
-    {"p": "Belirtilmemiş", "i": "HAMZA OPUZ", "m": "DİYARBAKIR", "t": "0 554 1664421"},
-    {"p": "Belirtilmemiş", "i": "ŞEMSETTİN EREK", "m": "BİTLİS", "t": "0 537 4086851"},
-    {"p": "Belirtilmemiş", "i": "BURHAN DOLAN", "m": "BURSA", "t": "0 532 3425805"}
+# --- HAT LİSTELERİ ---
+TUM_HATLAR = [
+    "1A", "1C", "1D", "1GY", "1H", "1K", "1M", "1MB", "1SY", "1T", "1TG", "1TK", 
+    "2B", "2BT", "2C", "2E", "2G1", "2G2", "2GH", "2GK", "2GM", "2GY", "2K", "2KÇ", 
+    "2M", "2MU", "2U", "3C", "3G", "3İ", "3MU", "3P", "4A", "4B", "4G", "4İ", 
+    "5A", "5B", "5E", "5G", "6A", "6E", "6F", "6F1", "6F2", "6FD", "6K1", "7A", 
+    "7B", "7C", "7S", "8L", "9D", "9M", "9PA", "14F", "14L", "14L2", "14L3", "14N", 
+    "14U", "15", "15A", "15B", "15D", "15H", "16A", "16İ", "16S", "17A", "17B", 
+    "17C", "17D", "17E", "17F", "17H", "17M", "17S", "17Y", "18", "18B", "18İ", 
+    "18Y", "19A", "19B", "19C", "19D", "19E", "19İ", "20", "20A", "21", "21C", 
+    "21CK", "22C", "23", "23A", "24B", "24D", "25", "25A", "25B", "25D", "27A", 
+    "28", "28A", "29A", "30", "31A", "35B", "35C", "35E1", "35E2", "35G", "35H", 
+    "35R", "35S", "35SE", "35U", "36", "36A", "37", "38", "38B", "38B2", "38D", 
+    "38D2", "38G", "40H", "43A", "43D", "43H", "43HB", "60B", "60K",
+    "B1", "B1B", "B2", "B2A", "B2C", "B2D", "B2K", "B3", "B3K", "B4", "B5", "B6", 
+    "B7", "B8", "B9", "B10", "B10K", "B12", "B13", "B15", "B15C", "B16A", "B16B", 
+    "B17", "B17A", "B17B", "B20A", "B20B", "B20C", "B20D", "B20G", "B22", "B22K", 
+    "B24", "B25", "B27", "B29", "B30", "B31", "B31A", "B32", "B32A", "B33", "B33A", 
+    "B33G", "B33H", "B33K", "B33M", "B34", "B34U", "B35", "B35K1", "B35K2", "B35M", 
+    "B36", "B36A", "B36C", "B36M", "B36U", "B37", "B38", "B39", "B39K", "B40", 
+    "B41B", "B41C", "B42A", "B43", "B44B", "B46", 
+    "91", "91G", "92", "92B", "93", "93E", "94", "95", "95A", "95B", "96", "97", 
+    "97A", "97B", "97F", "97G", "98", "98E", "99", "101", "102", "103", "103A", 
+    "104", "105", "111A", "111B", "112", "112A", "113", "113A", "114", "114A", 
+    "115", "116", "116C", "117", "118A", "119", "119A", "120", "130", "131", 
+    "132", "132İ", "133", "134", "134F", "135", "135H", "136", "137", "139", 
+    "140", "401", "501", "601", "601U", "610", "610H", "611", "612", "612T", 
+    "613", "614", "615", "616", "616H", "617", "617H", "618", "619", "620", 
+    "620K", "621", "622", "623", "630", "631", "632", "642", "675", "741M", 
+    "755B", "772", "801", "811", "811D", "812S", "812T", "813C", "813D", "813H", 
+    "814", "815", "816", "817", "817TK", "818", "818H", "820", "901", "903", 
+    "911A", "912", "913", "914", "914A", "991", "992", "D1", "D1A", "D1B", 
+    "D2", "D2A", "D2B", "D3", "D4", "D4A", "D5", "D6", "D6A", "D7", "D7A", 
+    "D8", "D8A", "D9", "D10", "D11", "D11A", "D11B", "D12", "D12A", "D12E", 
+    "D12H", "D12R", "D12Y", "D13", "D13A", "D14", "D14A", "D15", "D16", "D16A", 
+    "D16B", "D17", "D17B", "D18", "D19", "D20", "D21", "D22", "D23", "D24", 
+    "D24E", "D25", "D26", "E2", "E12", "E13", "F1", "F3", "G1", "G2", "G3", 
+    "G4S", "G4T", "G5", "G6", "G7", "G8", "H1", "H2", "H3", "H3B", "H3D", "H4", 
+    "S1", "S2"
 ]
 
-# Türkçe Karakter Temizleme Sistemi
-def temizle(metin):
-    if not isinstance(metin, str):
-        return ""
-    harfler = {"I": "ı", "İ": "i", "Ş": "ş", "Ğ": "ğ", "Ü": "ü", "Ö": "ö", "Ç": "ç"}
-    for buyuk, kucuk in harfler.items():
-        metin = metin.replace(buyuk, kucuk)
-    return metin.lower().replace(" ", "")
+OHO_BATI = ["1C", "1T", "1TG", "1TK", "2B", "2BT", "2E", "B2", "B3", "B3K", "B4", "B5", "6F", "6FD", "6E", "6A", "6K1", "B8", "8L", "9D", "9M", "9PA", "B9", "B10", "B10K", "B12", "B13", "14L", "14L2", "14L3", "14N", "14F", "B16A", "B16B", "B17", "B17B", "B17A", "B20A", "B20B", "B20C", "B20D", "B24", "B25", "B27", "B29", "B31", "B31A", "B32", "B32A", "B33", "B33H", "B33A", "B33K", "B34", "B34U", "B35K1", "B35K2", "35H", "B36", "B36M", "B36C", "B36A", "B36U", "B38", "B39", "B39K", "B40", "40H", "B41B", "B41C", "B42A", "B43", "43A", "B44B", "B46", "97A", "H2", "H3", "H3B", "H3D", "6F1", "6F2", "B20G"]
+OHO_DOGU = ["19B", "19D", "19İ", "D1B", "20", "20A", "21", "23", "23A", "24B", "24D", "27A", "28A"]
 
-if arama:
-    sorgu = temizle(arama)
-    sonuclar = []
+# --- OTOBÜS TİPLERİ LİSTESİ ---
+SIRKET_HATLARI = ["6E", "6A", "97A"]
+OTOBUS_12M_HATLARI = ["1T", "1TG", "1TK", "6F", "6FD", "6K1", "8L", "9D", "B24", "B25", "B40", "40H", "B41B", "B41C", "B42A", "43A", "B44B", "H2"]
+DOGU_MIKROBUS_HATLARI = ["19D", "24D", "27A", "28A"]
+
+def get_turkey_time():
+    tz = pytz.timezone('Europe/Istanbul')
+    return datetime.now(tz).strftime('%H:%M:%S')
+
+def get_address(lat, lon):
+    try:
+        geolocator = Nominatim(user_agent="cntooturk_bursa_panel", timeout=5)
+        loc = geolocator.reverse(f"{lat},{lon}")
+        if loc:
+            address = loc.raw.get('address', {})
+            road = address.get('road', '') 
+            
+            mahalle = ""
+            for key in ['neighbourhood', 'quarter', 'suburb', 'residential', 'village']:
+                if address.get(key):
+                    mahalle = address.get(key)
+                    break
+            
+            if not mahalle:
+                mahalle = address.get('town') or address.get('city_district') or address.get('district') or ""
+
+            if road and mahalle: return f"{road}, {mahalle}"
+            elif road: return road
+            elif mahalle: return mahalle
+            return loc.address.split(",")[0]
+    except:
+        return "Adres bilgisi bekleniyor..."
+    return "Adres bilgisi bekleniyor..."
+
+def plaka_duzenle(plaka_ham):
+    try:
+        p = plaka_ham.upper().replace(" ", "")
+        match = re.match(r"(\d+)([A-Z]+)(\d+)", p)
+        if match: return f"{match.group(1)} {match.group(2)} {match.group(3)}"
+        return p
+    except: return plaka_ham
+
+def veri_cek(keyword, genis_sorgu=True):
+    try:
+        if genis_sorgu:
+            payload = {"keyword": keyword, "take": 2000, "limit": 2000}
+        else:
+            payload = {"keyword": keyword}
+            
+        session = get_http_session()
+        for _ in range(2):
+            try:
+                r = session.post(API_URL, json=payload, timeout=5, verify=False)
+                if r.status_code == 200:
+                    data = r.json().get("result", [])
+                    if data: return data
+            except:
+                time.sleep(0.5)
+                continue
+                
+        return []
+    except: return []
+
+def oho_hat_verisi_getir(hat):
+    res = veri_cek(hat, genis_sorgu=True)
+    goru_plaka = set()
+    temiz = []
+    for b in res:
+        if b['plaka'] not in goru_plaka:
+            temiz.append(b)
+            goru_plaka.add(b['plaka'])
     
-    for kisi in veriler:
-        plaka = temizle(kisi.get("p", ""))
-        isim = temizle(kisi.get("i", ""))
-        memleket = temizle(kisi.get("m", ""))
-        telefon = temizle(kisi.get("t", ""))
+    ham_yolcu = sum(int(float(b.get('gunlukYolcu', 0) or 0)) for b in temiz)
+    k_yolcu = int(ham_yolcu * 1.11)
+    return {"hat": hat, "arac": len(temiz), "yolcu": k_yolcu}
+
+def hatlari_birlestir(veri_listesi, hatlar_listesi, yeni_isim):
+    birlesecekler = [x for x in veri_listesi if x['hat'] in hatlar_listesi]
+    
+    if birlesecekler:
+        toplam_arac = sum(x['arac'] for x in birlesecekler)
+        toplam_yolcu = sum(x['yolcu'] for x in birlesecekler)
         
-        plaka_rakam = re.sub(r'[^0-9]', '', plaka)
+        sub_hatlar = sorted(birlesecekler, key=lambda x: x['yolcu'], reverse=True)
+        veri_listesi = [x for x in veri_listesi if x['hat'] not in hatlar_listesi]
         
-        isimde_var = sorgu in isim
-        memlekette_var = sorgu in memleket
-        plakada_var = (sorgu in plaka) or (sorgu in plaka_rakam)
+        veri_listesi.append({
+            "hat": yeni_isim, 
+            "arac": toplam_arac, 
+            "yolcu": toplam_yolcu,
+            "is_merged": True,
+            "sub_hatlar": sub_hatlar
+        })
         
-        telefonda_var = False
-        if telefon != "vefat" and sorgu in telefon:
-            if sorgu.isnumeric() and len(sorgu) <= 5:
-                telefonda_var = False
-            else:
-                telefonda_var = True
-                
-        if isimde_var or plakada_var or telefonda_var or memlekette_var:
-            sonuclar.append(kisi)
+    return veri_listesi
+
+def google_maps_link(lat, lon):
+    return f"https://www.google.com/maps?q={lat},{lon}"
+
+def yandex_maps_link(lat, lon):
+    return f"https://yandex.com.tr/harita/?text={lat},{lon}"
+
+if 'secilen_plaka' not in st.session_state:
+    st.session_state.secilen_plaka = None
+if 'takip_modu' not in st.session_state:
+    st.session_state.takip_modu = False
+if 'aktif_arama' not in st.session_state:
+    st.session_state.aktif_arama = None
+if 'hat_ham_veri' not in st.session_state:
+    st.session_state.hat_ham_veri = []
+if 'oho_data' not in st.session_state:
+    st.session_state.oho_data = None
+if 'do_tab_switch' not in st.session_state:
+    st.session_state.do_tab_switch = False
+
+def arac_secildi_callback():
+    secim = st.session_state.selectbox_secimi
+    if secim and secim != "Seçiniz...":
+        ham_veri = st.session_state.hat_ham_veri
+        hedef_arac = next((x for x in ham_veri if x['plaka'] == secim), None)
+        if hedef_arac:
+            hedef_arac['hatkodu'] = st.session_state.aktif_arama
+            st.session_state.secilen_plaka = hedef_arac
+            st.session_state.takip_modu = True
+            time.sleep(1)
+
+st.title("🚌 Cntooturk Takip Sistemi")
+st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Güncelleme | 🚀 v111 (Hazırlık)")
+
+if st.session_state.get('do_tab_switch'):
+    components.html("""
+        <script>
+            var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            if(tabs.length > 0){
+                tabs[0].click();
+            }
+        </script>
+    """, height=0)
+    st.session_state.do_tab_switch = False
+
+tab_canli, tab_oho = st.tabs(["📍 CANLI TAKİP", "📊 ÖHO HAT VERİLERİ"])
+
+# ==========================================
+# 1. SEKME: MEVCUT CANLI TAKİP SİSTEMİ
+# ==========================================
+with tab_canli:
+    if not st.session_state.takip_modu:
+        col_input, col_btn = st.columns([3, 1])
+        with col_input:
+            giris_text = st.text_input("Giriş:", 
+                                       value=st.session_state.get('giris_input', ''), 
+                                       placeholder="Örn: 16M10171 veya B5", 
+                                       key="giris_kutu")
+        with col_btn:
+            st.write("") 
+            st.write("") 
+            btn_baslat = st.button("SORGULA", type="primary")
+
+        if btn_baslat and giris_text:
+            giris_temiz = giris_text.replace("i", "İ").replace("ı", "I").upper().strip()
+            st.session_state.aktif_arama = giris_temiz
+            st.session_state.giris_input = giris_temiz
+            st.session_state.takip_modu = False 
+            st.session_state.secilen_plaka = None
+            st.session_state.hat_ham_veri = []
+
+    if st.session_state.aktif_arama and not st.session_state.takip_modu:
+        giris = st.session_state.aktif_arama
+        
+        if giris == "3" or giris == "0":
+            st.subheader("💤 Boş / Servis Dışı")
+            veriler = []
+            with st.spinner("Taranıyor..."):
+                anahtarlar = ["HAT SEÇİLMEMİŞ", "SERVİS DIŞI", "0", "3"]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    sonuclar = executor.map(lambda k: veri_cek(k, genis_sorgu=True), anahtarlar)
+                    for res in sonuclar:
+                        if res: veriler.extend(res)
             
-    # Sonuçları ekrana yazdırma
-    if len(sonuclar) > 0:
-        for kisi in sonuclar:
-            memleket_bilgisi = kisi.get('m', 'Belirtilmemiş')
+            temiz_veriler = []
+            goru_plakalar = set()
+            for v in veriler:
+                if v['plaka'] not in goru_plakalar:
+                    temiz_veriler.append(v)
+                    goru_plakalar.add(v['plaka'])
             
-            if kisi.get('t', '').upper() == "VEFAT":
-                telefon_gorseli = "Vefat Etmiş"
-                buton_kodu = f'<div style="background-color: #dc3545; color: white; padding: 10px 15px; border-radius: 50px; font-size: 16px; font-weight: bold; text-align: center;">🔴 Vefat</div>'
-            else:
-                telefon_gorseli = kisi.get('t', '')
-                tel_link = telefon_gorseli.replace(" ", "")
-                buton_kodu = f'<a href="tel:{tel_link}" style="background-color: #28a745; color: white; padding: 12px 18px; border-radius: 50px; text-decoration: none; font-size: 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); font-weight: bold;">📞 Ara</a>'
+            temiz_veriler = sorted(temiz_veriler, key=lambda x: int(float(x.get('gunlukYolcu', 0) or 0)), reverse=True)
+            st.session_state.hat_ham_veri = temiz_veriler
+            
+            if temiz_veriler:
+                st.markdown(f'<p style="margin-bottom: 5px; font-weight:bold;">Toplam {len(temiz_veriler)} araç listeleniyor:</p>', unsafe_allow_html=True)
                 
-            st.markdown(f"""
-            <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 5px solid #1a73e8; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <div style="font-size: 20px; font-weight: bold; color: #202124; margin-bottom: 4px;">{kisi.get('i', '')}</div>
-                    <div style="font-size: 14px; color: #5f6368; margin-bottom: 8px;">📍 Nüfus: <b>{memleket_bilgisi}</b></div>
-                    <div style="font-size: 18px; color: #1a73e8; font-weight: bold; margin-bottom: 8px; background: #e8f0fe; display: inline-block; padding: 4px 10px; border-radius: 6px;">{kisi.get('p', 'Belirtilmemiş')}</div>
-                    <div style="font-size: 17px; color: #188038; font-weight: bold;">{telefon_gorseli}</div>
-                </div>
-                {buton_kodu}
+                c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
+                c1.markdown("<span class='table-header'>PLAKA</span>", unsafe_allow_html=True)
+                c2.markdown("<span class='table-header'>HIZ</span>", unsafe_allow_html=True)
+                c3.markdown("<span class='table-header'>YOLCU</span>", unsafe_allow_html=True)
+                c4.markdown("<span class='table-header'>KONUM</span>", unsafe_allow_html=True)
+                c5.markdown("<span class='table-header'>İZLE</span>", unsafe_allow_html=True)
+                st.divider()
+
+                for i, bus in enumerate(temiz_veriler):
+                    c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
+                    c1.write(f"**{bus['plaka']}**")
+                    
+                    h_hiz = float(bus.get('hiz', 0) or 0)
+                    k_hiz = int(h_hiz * 1.40)
+                    c2.write(f"{k_hiz}")
+                    
+                    h_yolcu = bus.get('gunlukYolcu', 0) or 0
+                    k_yolcu = int(h_yolcu * 1.11)
+                    c3.write(f"{k_yolcu}")
+                    
+                    maps = google_maps_link(bus['enlem'], bus['boylam'])
+                    c4.link_button("📍", maps)
+                    
+                    if c5.button("▶️", key=f"btn_{bus['plaka']}_{i}", type="primary"):
+                        bus['hatkodu'] = "SERVİS DIŞI"
+                        st.session_state.secilen_plaka = bus
+                        st.session_state.takip_modu = True
+                        st.rerun()
+                    st.divider()
+
+        elif len(giris) > 4 and giris[0].isdigit():
+            hedef = plaka_duzenle(giris)
+            with st.status("🔍 Araç aranıyor...", expanded=True) as status:
+                bulunan = None
+                
+                status.write(f"📡 '{hedef}' aranıyor...")
+                res = veri_cek(hedef, genis_sorgu=False)
+                if not res:
+                    res = veri_cek(hedef.replace(" ", ""), genis_sorgu=False)
+                    
+                if res:
+                    for b in res:
+                        if b.get("plaka", "").replace(" ", "") == hedef.replace(" ", ""):
+                            bulunan = b
+                            hk = bulunan.get('hatkodu')
+                            if not hk or str(hk).strip() == "" or str(hk) == "0":
+                                bulunan['hatkodu'] = 'SERVİS DIŞI'
+                            else:
+                                bulunan['hatkodu'] = hk
+                            break
+                
+                if not bulunan:
+                    status.write("🌍 Tüm hatlar taranıyor...")
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                        future_to_hat = {executor.submit(veri_cek, hat, True): hat for hat in TUM_HATLAR}
+                        for future in concurrent.futures.as_completed(future_to_hat):
+                            data = future.result()
+                            for bus in data:
+                                if bus.get("plaka", "").replace(" ","") == hedef.replace(" ",""):
+                                    bulunan = bus
+                                    bulunan['hatkodu'] = future_to_hat[future]
+                                    executor.shutdown(wait=False)
+                                    break
+                            if bulunan: break
+                
+                if not bulunan:
+                    status.write("💤 Boş araçlara bakılıyor...")
+                    for k in ["HAT SEÇİLMEMİŞ", "SERVİS DIŞI", "0", "3"]:
+                        res = veri_cek(k, genis_sorgu=True)
+                        for bus in res:
+                            if bus.get("plaka", "").replace(" ","") == hedef.replace(" ",""):
+                                bulunan = bus
+                                bulunan['hatkodu'] = "SERVİS DIŞI"
+                                break
+                        if bulunan: break
+
+                if bulunan:
+                    status.update(label="✅ Bulundu!", state="complete", expanded=False)
+                    st.session_state.secilen_plaka = bulunan
+                    st.session_state.takip_modu = True
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    status.update(label="❌ Bulunamadı", state="error", expanded=True)
+                    st.error(f"❌ {hedef} bulunamadı. Araç cihazı uykuda veya şartel kapatılmış olabilir.")
+
+        else:
+            st.subheader(f"📊 Hat: {giris}")
+            with st.spinner("Veriler yükleniyor..."):
+                data = veri_cek(giris, genis_sorgu=True)
+                
+                temiz_data = []
+                goru_plaka = set()
+                for d in data:
+                    if d['plaka'] not in goru_plaka:
+                        temiz_data.append(d)
+                        goru_plaka.add(d['plaka'])
+                
+                temiz_data = sorted(temiz_data, key=lambda x: int(float(x.get('gunlukYolcu', 0) or 0)), reverse=True)
+                st.session_state.hat_ham_veri = temiz_data
+            
+            if temiz_data:
+                ham_toplam = sum(int(float(b.get('gunlukYolcu', 0) or 0)) for b in temiz_data)
+                kalibre_toplam = int(ham_toplam * 1.11)
+                
+                c_toplam, c_arac = st.columns(2)
+                c_toplam.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-title">TOPLAM YOLCU</div>
+                        <div class="metric-value">{kalibre_toplam}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                c_arac.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-title">AKTİF ARAÇ</div>
+                        <div class="metric-value">{len(temiz_data)}</div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("""
+                    <div class="note-card">
+                        ⚠️ <b>SİSTEM NOTU:</b><br>
+                        Yolcu verileri merkezi sistemden (BURULAŞ/ABYS) kaynaklı olarak 
+                        2-3 dakika gecikmeli yansıyabilmektedir.
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
+                c1.markdown("<span class='table-header'>PLAKA</span>", unsafe_allow_html=True)
+                c2.markdown("<span class='table-header'>HIZ</span>", unsafe_allow_html=True)
+                c3.markdown("<span class='table-header'>YOLCU</span>", unsafe_allow_html=True)
+                c4.markdown("<span class='table-header'>KONUM</span>", unsafe_allow_html=True)
+                c5.markdown("<span class='table-header'>İZLE</span>", unsafe_allow_html=True)
+                st.divider()
+
+                for i, bus in enumerate(temiz_data):
+                    c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
+                    c1.write(f"**{bus['plaka']}**")
+                    
+                    h_hiz = float(bus.get('hiz', 0) or 0)
+                    k_hiz = int(h_hiz * 1.40)
+                    c2.write(f"{k_hiz}")
+                    
+                    h_yolcu = bus.get('gunlukYolcu', 0) or 0
+                    k_yolcu = int(h_yolcu * 1.11)
+                    c3.write(f"{k_yolcu}")
+                    
+                    maps = google_maps_link(bus['enlem'], bus['boylam'])
+                    c4.link_button("📍", maps)
+                    
+                    if c5.button("▶️", key=f"btn_{bus['plaka']}_{i}", type="primary"):
+                        bus['hatkodu'] = giris
+                        st.session_state.secilen_plaka = bus
+                        st.session_state.takip_modu = True
+                        st.rerun()
+                    st.divider()
+
+                plaka_listesi = [b['plaka'] for b in temiz_data]
+                st.selectbox("Veya listeden seç:", ["Seçiniz..."] + plaka_listesi, key="selectbox_secimi", on_change=arac_secildi_callback)
+
+            else:
+                st.warning("Hat verisi alınamadı.")
+
+    if st.session_state.takip_modu and st.session_state.secilen_plaka:
+        
+        arama_terimi = st.session_state.aktif_arama
+        is_plaka = len(arama_terimi) > 4 and arama_terimi[0].isdigit()
+        
+        if is_plaka:
+            if st.button("🏠 Ana Menüye Dön"):
+                st.session_state.takip_modu = False
+                st.session_state.secilen_plaka = None
+                st.session_state.aktif_arama = None
+                st.session_state.giris_input = ""
+                st.session_state.hat_ham_veri = []
+                st.rerun()
+        else:
+            if st.button("⬅️ Listeye Geri Dön"):
+                st.session_state.takip_modu = False
+                st.session_state.secilen_plaka = None
+                st.rerun()
+
+        eski_veri = st.session_state.secilen_plaka
+        hedef_plaka = eski_veri['plaka']
+        hedef_hat = eski_veri.get('hatkodu') or st.session_state.aktif_arama
+
+        taze_veri = None
+        
+        res_plaka = veri_cek(plaka_duzenle(hedef_plaka), genis_sorgu=False)
+        if res_plaka:
+            for r in res_plaka:
+                if r['plaka'] == hedef_plaka:
+                    taze_veri = r
+                    break
+        
+        if not taze_veri and hedef_hat and hedef_hat != "ÖZEL":
+            hat_verisi = veri_cek(hedef_hat, genis_sorgu=True)
+            taze_veri = next((x for x in hat_verisi if x['plaka'] == hedef_plaka), None)
+
+        if taze_veri:
+            taze_veri['hatkodu'] = taze_veri.get('hatkodu') or hedef_hat
+            arac = taze_veri
+            st.session_state.secilen_plaka = taze_veri
+        else:
+            arac = eski_veri
+            st.toast("⚠️ Bağlantı bekleniyor (Yenileniyor...)")
+
+        st.markdown("---")
+        
+        st.markdown(f"""
+            <div class='info-box'>
+                <h3 style='margin:0; text-align:center;'>🔴 {arac['plaka']}</h3>
+                <p style='text-align:center; color:#ccc; margin-top:5px;'>CANLI TAKİP MODU</p>
             </div>
+        """, unsafe_allow_html=True)
+
+        surucu = arac.get('surucu') or "Belirtilmemiş"
+        st.markdown(f"""
+            <div style='background-color:#1e1e1e; padding:8px; border-radius:4px; text-align:center; border:1px solid #333; margin-bottom:15px;'>
+                <span style='color:#888; font-size:12px;'>👮 SÜRÜCÜ</span><br>
+                <span style='color:#fff; font-weight:bold; font-size:16px;'>{surucu}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+        hat_no = arac.get('hatkodu') or "---"
+        
+        h_hiz_canli = float(arac.get('hiz', 0) or 0)
+        k_hiz_canli = int(h_hiz_canli * 1.40)
+        hiz = f"{k_hiz_canli} km/s"
+        
+        ham_anlik = arac.get('seferYolcu')
+        ham_toplam = arac.get('gunlukYolcu', 0) or 0
+        kalibre_toplam = int(ham_toplam * 1.11)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f"""<div class="metric-card"><div class="metric-title">HAT</div><div class="metric-value" style="color:#ff4b4b;">{hat_no}</div></div>""", unsafe_allow_html=True)
+        c2.markdown(f"""<div class="metric-card"><div class="metric-title">HIZ</div><div class="metric-value">{hiz}</div></div>""", unsafe_allow_html=True)
+        c3.markdown(f"""<div class="metric-card"><div class="metric-title">ANLIK</div><div class="metric-value" style="color:#00bc8c;">{ham_anlik}</div></div>""", unsafe_allow_html=True)
+        c4.markdown(f"""<div class="metric-card"><div class="metric-title">TOPLAM</div><div class="metric-value">{kalibre_toplam}</div></div>""", unsafe_allow_html=True)
+
+        lat = float(arac['enlem'])
+        lon = float(arac['boylam'])
+        adres = get_address(lat, lon)
+        
+        st.markdown(f"""
+            <div class="address-card">
+                <span style='font-size:20px; margin-right:10px;'>📍</span>
+                <span>{adres}</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+            <div class="note-card">
+                ⚠️ <b>SİSTEM NOTU:</b><br>
+                Yolcu verileri merkezi sistemden kaynaklı 2-3 dk gecikmeli gelebilir.
+            </div>
+        """, unsafe_allow_html=True)
+
+        col_g, col_y = st.columns(2)
+        col_g.link_button("🗺️ Google Haritalar", google_maps_link(lat, lon), use_container_width=True)
+        col_y.link_button("🧭 Yandex Navigasyon", yandex_maps_link(lat, lon), use_container_width=True)
+
+        m = folium.Map(location=[lat, lon], zoom_start=15)
+        folium.Marker(
+            [lat, lon],
+            tooltip=f"{arac['plaka']}",
+            popup=f"Hız: {k_hiz_canli}", 
+            icon=folium.Icon(color="red", icon="bus", prefix="fa")
+        ).add_to(m)
+        st_folium(m, width=700, height=350)
+
+# ==========================================
+# 2. SEKME: YENİ ÖHO İSTATİSTİK SİSTEMİ
+# ==========================================
+with tab_oho:
+    st.markdown("<h3 style='text-align: center; color: #ff4b4b; margin-bottom: 5px;'>📊 ÖHO Filo Verileri</h3>", unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div class="oho-note">
+            ℹ️ <b>BİLGİLENDİRME:</b><br>
+            Bu veriler anlık olarak hat numarası açık olan araçlardan çekilmektedir. 
+            Yolcu verilerinde gecikmeler yaşanmaktadır.
+        </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("🔄 Tüm Verileri Yükle / Güncelle", use_container_width=True, type="primary"):
+        with st.spinner("Tüm ÖHO Hatları (Batı ve Doğu) taranıyor, bu işlem birkaç saniye sürebilir..."):
+            bati_veriler = []
+            dogu_veriler = []
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                future_bati = {executor.submit(oho_hat_verisi_getir, hat): hat for hat in OHO_BATI}
+                for future in concurrent.futures.as_completed(future_bati):
+                    bati_veriler.append(future.result())
+                    
+            with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                future_dogu = {executor.submit(oho_hat_verisi_getir, hat): hat for hat in OHO_DOGU}
+                for future in concurrent.futures.as_completed(future_dogu):
+                    dogu_veriler.append(future.result())
+            
+            # --- KATEGORİ HESAPLAMALARI ---
+            s_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] in SIRKET_HATLARI)
+            o_12m_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] in OTOBUS_12M_HATLARI)
+            m_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] not in SIRKET_HATLARI and v['hat'] not in OTOBUS_12M_HATLARI)
+            
+            dogu_m_yolcu = sum(v['yolcu'] for v in dogu_veriler if v['hat'] in DOGU_MIKROBUS_HATLARI)
+            dogu_o_yolcu = sum(v['yolcu'] for v in dogu_veriler if v['hat'] not in DOGU_MIKROBUS_HATLARI)
+            
+            # --- ENTEGRE HATLARI BİRLEŞTİRME ---
+            bati_veriler = hatlari_birlestir(bati_veriler, ["6F", "6FD"], "6F & 6FD")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B32", "B32A"], "B32 & B32A")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["1T", "1TG", "1TK"], "1T & 1TG & 1TK")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B39", "B39K"], "B39 & B39K")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B31", "B31A"], "B31 & B31A")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B35K1", "B35K2"], "B35K1 & B35K2")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B3", "B3K"], "B3 & B3K")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B33A", "B33K"], "B33A & B33K")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["H3", "H3B", "H3D"], "H3 & H3B & H3D")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B20A", "B20C"], "B20A & B20C")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["14L2", "14L3"], "14L2 & 14L3")
+            bati_veriler = hatlari_birlestir(bati_veriler, ["B36", "B36M"], "B36 & B36M")
+            
+            # YOLCU SAYISINA GÖRE SIRALAMA
+            bati_veriler = sorted(bati_veriler, key=lambda x: x['yolcu'], reverse=True)
+            dogu_veriler = sorted(dogu_veriler, key=lambda x: x['yolcu'], reverse=True)
+            
+            st.session_state.oho_data = {
+                "bati": bati_veriler,
+                "dogu": dogu_veriler,
+                "bati_toplam_yolcu": sum(v['yolcu'] for v in bati_veriler),
+                "dogu_toplam_yolcu": sum(v['yolcu'] for v in dogu_veriler),
+                "bati_toplam_arac": sum(v['arac'] for v in bati_veriler),
+                "dogu_toplam_arac": sum(v['arac'] for v in dogu_veriler),
+                "sirket_yolcu": s_yolcu,
+                "otobus_12m_yolcu": o_12m_yolcu,
+                "otobus_toplam": s_yolcu + o_12m_yolcu,
+                "mikrobus_toplam": m_yolcu,
+                "dogu_otobus_toplam": dogu_o_yolcu,
+                "dogu_mikrobus_toplam": dogu_m_yolcu
+            }
+            st.success("Veriler başarıyla çekildi ve entegre hatlar birleştirildi!")
+
+    if st.session_state.oho_data:
+        data = st.session_state.oho_data
+        
+        # --- FARK HESAPLAMALARI ---
+        fark_bati = abs(data['otobus_toplam'] - data['mikrobus_toplam'])
+        if data['otobus_toplam'] > data['mikrobus_toplam']:
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobüsler</b>, mikrobüslerden <b>{fark_bati}</b> yolcu fazla.</div>"
+        elif data['mikrobus_toplam'] > data['otobus_toplam']:
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobüsler</b>, otobüslerden <b>{fark_bati}</b> yolcu fazla.</div>"
+        else:
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobüs ve Mikrobüs yolcu sayıları eşit.</div>"
+
+        fark_dogu = abs(data['dogu_otobus_toplam'] - data['dogu_mikrobus_toplam'])
+        if data['dogu_otobus_toplam'] > data['dogu_mikrobus_toplam']:
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobüsler</b>, mikrobüslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
+        elif data['dogu_mikrobus_toplam'] > data['dogu_otobus_toplam']:
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobüsler</b>, otobüslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
+        else:
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobüs ve Mikrobüs yolcu sayıları eşit.</div>"
+
+        
+        cb1, cd1 = st.columns(2)
+        cb1.markdown(f"""
+            <div class="metric-card" style="border-left: 5px solid #00bc8c;">
+                <div class="metric-title">ÖHO BATI TOPLAM YOLCU</div>
+                <div class="metric-value">{data['bati_toplam_yolcu']}</div>
+                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Araç: {data['bati_toplam_arac']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        cd1.markdown(f"""
+            <div class="metric-card" style="border-left: 5px solid #ff4b4b;">
+                <div class="metric-title">ÖHO DOĞU TOPLAM YOLCU</div>
+                <div class="metric-value">{data['dogu_toplam_yolcu']}</div>
+                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Araç: {data['dogu_toplam_arac']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("")
+        
+        with st.expander("📂 ÖHO BATI HATLARI DETAYLARI", expanded=False):
+            
+            st.markdown(f"""
+                <div class="type-summary-card">
+                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBÜS HATLARI: <span style="color:#f39c12;">{data['otobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:3px;">• Şirket Araçları (6E, 6A, 97A): <span style="color:#fff;">{data['sirket_yolcu']}</span></div>
+                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:8px;">• 12 Metre Araçlar: <span style="color:#fff;">{data['otobus_12m_yolcu']}</span></div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MİKROBÜS HATLARI: <span style="color:#f39c12;">{data['mikrobus_toplam']}</span> Yolcu</div>
+                    {bati_fark_html}
+                </div>
             """, unsafe_allow_html=True)
-    else:
-        st.warning("Eşleşen sonuç bulunamadı.")
-else:
-    st.info("Arama yapmak için yukarıya plaka, isim veya memleket yazın.")
+            
+            c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
+            c1.markdown("<span class='table-header' style='text-align:left;'>HAT NUMARASI</span>", unsafe_allow_html=True)
+            c2.markdown("<span class='table-header' style='text-align:left;'>AKTİF ARAÇ</span>", unsafe_allow_html=True)
+            c3.markdown("<span class='table-header' style='text-align:left;'>YOLCU</span>", unsafe_allow_html=True)
+            c4.markdown("<span class='table-header' style='text-align:center;'>İŞLEM</span>", unsafe_allow_html=True)
+            st.divider()
+            
+            for b in data['bati']:
+                if b['arac'] > 0 or b['yolcu'] > 0: 
+                    c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
+                    
+                    c1.markdown(f"<div style='font-size:15px; font-weight:bold; height:32px; display:flex; align-items:center;'>{b['hat']}</div>", unsafe_allow_html=True)
+                    c2.markdown(f"<div style='font-size:15px; height:32px; display:flex; align-items:center;'>{b['arac']}</div>", unsafe_allow_html=True)
+                    c3.markdown(f"<div style='font-size:15px; font-weight:bold; color:#ff4b4b; height:32px; display:flex; align-items:center;'>{b['yolcu']}</div>", unsafe_allow_html=True)
+                    
+                    if not b.get('is_merged'):
+                        if c4.button("Detay ➡", key=f"detay_b_{b['hat']}", use_container_width=True):
+                            st.session_state.aktif_arama = b['hat']
+                            st.session_state.giris_input = b['hat']
+                            st.session_state.takip_modu = False
+                            st.session_state.secilen_plaka = None
+                            st.session_state.hat_ham_veri = []
+                            st.session_state.do_tab_switch = True
+                            st.rerun()
+                    else:
+                        c4.write("")
+
+                    if b.get('is_merged'):
+                        for sub in b['sub_hatlar']:
+                            if sub['arac'] > 0 or sub['yolcu'] > 0:
+                                sc1, sc2, sc3, sc4 = st.columns([1.5, 1.0, 1.0, 1.2])
+                                sc1.markdown(f"<div style='font-size:14px; font-weight:bold; color:#ff4b4b; padding-left:15px; height:32px; display:flex; align-items:center;'>↳ {sub['hat']}</div>", unsafe_allow_html=True)
+                                sc2.markdown(f"<div style='font-size:14px; font-weight:bold; color:#ff4b4b; height:32px; display:flex; align-items:center;'>{sub['arac']}</div>", unsafe_allow_html=True)
+                                sc3.markdown(f"<div style='font-size:14px; font-weight:bold; color:#00bc8c; height:32px; display:flex; align-items:center;'>{sub['yolcu']}</div>", unsafe_allow_html=True)
+                                
+                                if sc4.button("Detay ➡", key=f"detay_b_sub_{sub['hat']}", use_container_width=True):
+                                    st.session_state.aktif_arama = sub['hat']
+                                    st.session_state.giris_input = sub['hat']
+                                    st.session_state.takip_modu = False
+                                    st.session_state.secilen_plaka = None
+                                    st.session_state.hat_ham_veri = []
+                                    st.session_state.do_tab_switch = True
+                                    st.rerun()
+                    st.divider()
+
+        with st.expander("📂 ÖHO DOĞU HATLARI DETAYLARI", expanded=False):
+            
+            st.markdown(f"""
+                <div class="type-summary-card">
+                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBÜS HATLARI: <span style="color:#f39c12;">{data['dogu_otobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MİKROBÜS HATLARI: <span style="color:#f39c12;">{data['dogu_mikrobus_toplam']}</span> Yolcu</div>
+                    {dogu_fark_html}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
+            c1.markdown("<span class='table-header' style='text-align:left;'>HAT NUMARASI</span>", unsafe_allow_html=True)
+            c2.markdown("<span class='table-header' style='text-align:left;'>AKTİF ARAÇ</span>", unsafe_allow_html=True)
+            c3.markdown("<span class='table-header' style='text-align:left;'>YOLCU</span>", unsafe_allow_html=True)
+            c4.markdown("<span class='table-header' style='text-align:center;'>İŞLEM</span>", unsafe_allow_html=True)
+            st.divider()
+            
+            for d in data['dogu']:
+                if d['arac'] > 0 or d['yolcu'] > 0: 
+                    c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
+                    
+                    c1.markdown(f"<div style='font-size:15px; font-weight:bold; height:32px; display:flex; align-items:center;'>{d['hat']}</div>", unsafe_allow_html=True)
+                    c2.markdown(f"<div style='font-size:15px; height:32px; display:flex; align-items:center;'>{d['arac']}</div>", unsafe_allow_html=True)
+                    c3.markdown(f"<div style='font-size:15px; font-weight:bold; color:#ff4b4b; height:32px; display:flex; align-items:center;'>{d['yolcu']}</div>", unsafe_allow_html=True)
+                    
+                    if not d.get('is_merged'):
+                        if c4.button("Detay ➡", key=f"detay_d_{d['hat']}", use_container_width=True):
+                            st.session_state.aktif_arama = d['hat']
+                            st.session_state.giris_input = d['hat']
+                            st.session_state.takip_modu = False
+                            st.session_state.secilen_plaka = None
+                            st.session_state.hat_ham_veri = []
+                            st.session_state.do_tab_switch = True
+                            st.rerun()
+                    else:
+                        c4.write("")
+
+                    if d.get('is_merged'):
+                        for sub in d['sub_hatlar']:
+                            if sub['arac'] > 0 or sub['yolcu'] > 0:
+                                sc1, sc2, sc3, sc4 = st.columns([1.5, 1.0, 1.0, 1.2])
+                                sc1.markdown(f"<div style='font-size:14px; font-weight:bold; color:#ff4b4b; padding-left:15px; height:32px; display:flex; align-items:center;'>↳ {sub['hat']}</div>", unsafe_allow_html=True)
+                                sc2.markdown(f"<div style='font-size:14px; font-weight:bold; color:#ff4b4b; height:32px; display:flex; align-items:center;'>{sub['arac']}</div>", unsafe_allow_html=True)
+                                sc3.markdown(f"<div style='font-size:14px; font-weight:bold; color:#00bc8c; height:32px; display:flex; align-items:center;'>{sub['yolcu']}</div>", unsafe_allow_html=True)
+                                
+                                if sc4.button("Detay ➡", key=f"detay_d_sub_{sub['hat']}", use_container_width=True):
+                                    st.session_state.aktif_arama = sub['hat']
+                                    st.session_state.giris_input = sub['hat']
+                                    st.session_state.takip_modu = False
+                                    st.session_state.secilen_plaka = None
+                                    st.session_state.hat_ham_veri = []
+                                    st.session_state.do_tab_switch = True
+                                    st.rerun()
+                    st.divider()
+
+# --- GLOBAL REFRESH ---
+if st.session_state.aktif_arama:
+    time.sleep(20)
+    st.rerun()
