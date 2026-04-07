@@ -654,6 +654,7 @@ with tab_canli:
             st.toast("⚠️ Bağlantı bekleniyor (Yenileniyor...)")
 
         st.markdown("---")
+        st.write(arac)
         
         st.markdown(f"""
             <div class='info-box'>
