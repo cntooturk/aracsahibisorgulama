@@ -21,10 +21,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="Cntooturk Takip Sistemi", page_icon="🚌", layout="centered")
 
 # =====================================================================
-# ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU (Yeni Eklendi)
+# ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU
 # =====================================================================
-PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" # Ornek Login URL
-# Sifreler st.secrets uzerinden guvenle cekilir (.streamlit/secrets.toml dosyasindan)
+PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" 
 try:
     USERNAME = st.secrets["API_USER"]
     PASSWORD = st.secrets["API_PASS"]
@@ -34,18 +33,11 @@ except:
 
 @st.cache_resource
 def get_private_session():
-    """Asil sisteme giris yapip Cookie'yi hafizada tutan kalici oturum"""
     session = requests.Session()
     retry = Retry(connect=3, backoff_factor=0.3)
     adapter = HTTPAdapter(max_retries=retry, pool_connections=150, pool_maxsize=150)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
-    
-    # ILERIDE AKTIF EDILECEK GIRIS ISLEMI:
-    # login_data = {"UserName": USERNAME, "Password": PASSWORD}
-    # session.post(PRIVATE_API_LOGIN_URL, data=login_data, verify=False)
-    # Bu sayede session, .AspNetCore.Cookies bilgisini icine alir ve sonraki isteklerde otomatik kullanir.
-    
     return session
 
 # =====================================================================
@@ -381,7 +373,7 @@ def arac_secildi_callback():
             time.sleep(1)
 
 st.title("🚌 Cntooturk Takip Sistemi")
-st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Guncelleme | 🚀 v112")
+st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Guncelleme | 🚀 v113")
 
 if st.session_state.get('do_tab_switch'):
     components.html("""
@@ -455,7 +447,6 @@ with tab_canli:
                 st.divider()
 
                 for i, bus in enumerate(temiz_veriler):
-                    st.info(bus)
                     c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
                     c1.write(f"**{bus['plaka']}**")
                     
@@ -583,7 +574,6 @@ with tab_canli:
                 st.divider()
 
                 for i, bus in enumerate(temiz_data):
-                    st.info(bus)
                     c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
                     c1.write(f"**{bus['plaka']}**")
                     
@@ -656,6 +646,9 @@ with tab_canli:
             st.toast("⚠️ Baglanti bekleniyor (Yenileniyor...)")
 
         st.markdown("---")
+        
+        # ISTE BU KUTU BUTUN GIZLI VERIYI EKRANA BASACAK!
+        st.info(arac)
         
         st.markdown(f"""
             <div class='info-box'>
