@@ -21,10 +21,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="Cntooturk Takip Sistemi", page_icon="🚌", layout="centered")
 
 # =====================================================================
-# 🔐 ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU (Yeni Eklendi)
+# ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU (Yeni Eklendi)
 # =====================================================================
-PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" # Örnek Login URL
-# Şifreler st.secrets üzerinden güvenle çekilir (.streamlit/secrets.toml dosyasından)
+PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" # Ornek Login URL
+# Sifreler st.secrets uzerinden guvenle cekilir (.streamlit/secrets.toml dosyasindan)
 try:
     USERNAME = st.secrets["API_USER"]
     PASSWORD = st.secrets["API_PASS"]
@@ -34,23 +34,23 @@ except:
 
 @st.cache_resource
 def get_private_session():
-    """Asıl sisteme giriş yapıp Cookie'yi hafızada tutan kalıcı oturum"""
+    """Asil sisteme giris yapip Cookie'yi hafizada tutan kalici oturum"""
     session = requests.Session()
     retry = Retry(connect=3, backoff_factor=0.3)
     adapter = HTTPAdapter(max_retries=retry, pool_connections=150, pool_maxsize=150)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
     
-    # İLERİDE AKTİF EDİLECEK GİRİŞ İŞLEMİ:
+    # ILERIDE AKTIF EDILECEK GIRIS ISLEMI:
     # login_data = {"UserName": USERNAME, "Password": PASSWORD}
     # session.post(PRIVATE_API_LOGIN_URL, data=login_data, verify=False)
-    # Bu sayede session, .AspNetCore.Cookies bilgisini içine alır ve sonraki isteklerde otomatik kullanır.
+    # Bu sayede session, .AspNetCore.Cookies bilgisini icine alir ve sonraki isteklerde otomatik kullanir.
     
     return session
 
 # =====================================================================
 
-# --- MEVCUT ÇALIŞAN API BAĞLANTISI ---
+# --- MEVCUT CALISAN API BAGLANTISI ---
 API_URL = "https://bursakartapi.abys-web.com/api/static/realtimedata"
 HEADERS = {
     'Content-Type': 'application/json',
@@ -210,7 +210,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- HAT LİSTELERİ ---
+# --- HAT LISTELERI ---
 TUM_HATLAR = [
     "1A", "1C", "1D", "1GY", "1H", "1K", "1M", "1MB", "1SY", "1T", "1TG", "1TK", 
     "2B", "2BT", "2C", "2E", "2G1", "2G2", "2GH", "2GK", "2GM", "2GY", "2K", "2KÇ", 
@@ -254,7 +254,7 @@ TUM_HATLAR = [
 OHO_BATI = ["1C", "1T", "1TG", "1TK", "2B", "2BT", "2E", "B2", "B3", "B3K", "B4", "B5", "6F", "6FD", "6E", "6A", "6K1", "B8", "8L", "9D", "9M", "9PA", "B9", "B10", "B10K", "B12", "B13", "14L", "14L2", "14L3", "14N", "14F", "B16A", "B16B", "B17", "B17B", "B17A", "B20A", "B20B", "B20C", "B20D", "B24", "B25", "B27", "B29", "B31", "B31A", "B32", "B32A", "B33", "B33H", "B33A", "B33K", "B34", "B34U", "B35K1", "B35K2", "35H", "B36", "B36M", "B36C", "B36A", "B36U", "B38", "B39", "B39K", "B40", "40H", "B41B", "B41C", "B42A", "B43", "43A", "B44B", "B46", "97A", "H2", "H3", "H3B", "H3D", "6F1", "6F2", "B20G"]
 OHO_DOGU = ["19B", "19D", "19İ", "D1B", "20", "20A", "21", "23", "23A", "24B", "24D", "27A", "28A"]
 
-# --- OTOBÜS TİPLERİ LİSTESİ ---
+# --- OTOBUS TIPLERI LISTESI ---
 SIRKET_HATLARI = ["6E", "6A", "97A"]
 OTOBUS_12M_HATLARI = ["1T", "1TG", "1TK", "6F", "6FD", "6K1", "8L", "9D", "B24", "B25", "B40", "40H", "B41B", "B41C", "B42A", "43A", "B44B", "H2"]
 DOGU_MIKROBUS_HATLARI = ["19D", "24D", "27A", "28A"]
@@ -381,7 +381,7 @@ def arac_secildi_callback():
             time.sleep(1)
 
 st.title("🚌 Cntooturk Takip Sistemi")
-st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Güncelleme | 🚀 v111 (Hazırlık)")
+st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Guncelleme | 🚀 v112")
 
 if st.session_state.get('do_tab_switch'):
     components.html("""
@@ -394,18 +394,18 @@ if st.session_state.get('do_tab_switch'):
     """, height=0)
     st.session_state.do_tab_switch = False
 
-tab_canli, tab_oho = st.tabs(["📍 CANLI TAKİP", "📊 ÖHO HAT VERİLERİ"])
+tab_canli, tab_oho = st.tabs(["📍 CANLI TAKIP", "📊 OHO HAT VERILERI"])
 
 # ==========================================
-# 1. SEKME: MEVCUT CANLI TAKİP SİSTEMİ
+# 1. SEKME: MEVCUT CANLI TAKIP SISTEMI
 # ==========================================
 with tab_canli:
     if not st.session_state.takip_modu:
         col_input, col_btn = st.columns([3, 1])
         with col_input:
-            giris_text = st.text_input("Giriş:", 
+            giris_text = st.text_input("Giris:", 
                                        value=st.session_state.get('giris_input', ''), 
-                                       placeholder="Örn: 16M10171 veya B5", 
+                                       placeholder="Orn: 16M10171 veya B5", 
                                        key="giris_kutu")
         with col_btn:
             st.write("") 
@@ -424,9 +424,9 @@ with tab_canli:
         giris = st.session_state.aktif_arama
         
         if giris == "3" or giris == "0":
-            st.subheader("💤 Boş / Servis Dışı")
+            st.subheader("💤 Bos / Servis Disi")
             veriler = []
-            with st.spinner("Taranıyor..."):
+            with st.spinner("Taraniyor..."):
                 anahtarlar = ["HAT SEÇİLMEMİŞ", "SERVİS DIŞI", "0", "3"]
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     sonuclar = executor.map(lambda k: veri_cek(k, genis_sorgu=True), anahtarlar)
@@ -444,17 +444,18 @@ with tab_canli:
             st.session_state.hat_ham_veri = temiz_veriler
             
             if temiz_veriler:
-                st.markdown(f'<p style="margin-bottom: 5px; font-weight:bold;">Toplam {len(temiz_veriler)} araç listeleniyor:</p>', unsafe_allow_html=True)
+                st.markdown(f'<p style="margin-bottom: 5px; font-weight:bold;">Toplam {len(temiz_veriler)} arac listeleniyor:</p>', unsafe_allow_html=True)
                 
                 c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
                 c1.markdown("<span class='table-header'>PLAKA</span>", unsafe_allow_html=True)
                 c2.markdown("<span class='table-header'>HIZ</span>", unsafe_allow_html=True)
                 c3.markdown("<span class='table-header'>YOLCU</span>", unsafe_allow_html=True)
                 c4.markdown("<span class='table-header'>KONUM</span>", unsafe_allow_html=True)
-                c5.markdown("<span class='table-header'>İZLE</span>", unsafe_allow_html=True)
+                c5.markdown("<span class='table-header'>IZLE</span>", unsafe_allow_html=True)
                 st.divider()
 
                 for i, bus in enumerate(temiz_veriler):
+                    st.info(bus)
                     c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
                     c1.write(f"**{bus['plaka']}**")
                     
@@ -470,7 +471,7 @@ with tab_canli:
                     c4.link_button("📍", maps)
                     
                     if c5.button("▶️", key=f"btn_{bus['plaka']}_{i}", type="primary"):
-                        bus['hatkodu'] = "SERVİS DIŞI"
+                        bus['hatkodu'] = "SERVIS DISI"
                         st.session_state.secilen_plaka = bus
                         st.session_state.takip_modu = True
                         st.rerun()
@@ -478,10 +479,10 @@ with tab_canli:
 
         elif len(giris) > 4 and giris[0].isdigit():
             hedef = plaka_duzenle(giris)
-            with st.status("🔍 Araç aranıyor...", expanded=True) as status:
+            with st.status("🔍 Arac araniyor...", expanded=True) as status:
                 bulunan = None
                 
-                status.write(f"📡 '{hedef}' aranıyor...")
+                status.write(f"📡 '{hedef}' araniyor...")
                 res = veri_cek(hedef, genis_sorgu=False)
                 if not res:
                     res = veri_cek(hedef.replace(" ", ""), genis_sorgu=False)
@@ -492,13 +493,13 @@ with tab_canli:
                             bulunan = b
                             hk = bulunan.get('hatkodu')
                             if not hk or str(hk).strip() == "" or str(hk) == "0":
-                                bulunan['hatkodu'] = 'SERVİS DIŞI'
+                                bulunan['hatkodu'] = 'SERVIS DISI'
                             else:
                                 bulunan['hatkodu'] = hk
                             break
                 
                 if not bulunan:
-                    status.write("🌍 Tüm hatlar taranıyor...")
+                    status.write("🌍 Tum hatlar taraniyor...")
                     with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
                         future_to_hat = {executor.submit(veri_cek, hat, True): hat for hat in TUM_HATLAR}
                         for future in concurrent.futures.as_completed(future_to_hat):
@@ -512,13 +513,13 @@ with tab_canli:
                             if bulunan: break
                 
                 if not bulunan:
-                    status.write("💤 Boş araçlara bakılıyor...")
+                    status.write("💤 Bos araclara bakiliyor...")
                     for k in ["HAT SEÇİLMEMİŞ", "SERVİS DIŞI", "0", "3"]:
                         res = veri_cek(k, genis_sorgu=True)
                         for bus in res:
                             if bus.get("plaka", "").replace(" ","") == hedef.replace(" ",""):
                                 bulunan = bus
-                                bulunan['hatkodu'] = "SERVİS DIŞI"
+                                bulunan['hatkodu'] = "SERVIS DISI"
                                 break
                         if bulunan: break
 
@@ -529,12 +530,12 @@ with tab_canli:
                     time.sleep(1)
                     st.rerun()
                 else:
-                    status.update(label="❌ Bulunamadı", state="error", expanded=True)
-                    st.error(f"❌ {hedef} bulunamadı. Araç cihazı uykuda veya şartel kapatılmış olabilir.")
+                    status.update(label="❌ Bulunamadi", state="error", expanded=True)
+                    st.error(f"❌ {hedef} bulunamadi. Arac cihazi uykuda veya sartel kapatilmis olabilir.")
 
         else:
             st.subheader(f"📊 Hat: {giris}")
-            with st.spinner("Veriler yükleniyor..."):
+            with st.spinner("Veriler yukleniyor..."):
                 data = veri_cek(giris, genis_sorgu=True)
                 
                 temiz_data = []
@@ -560,16 +561,16 @@ with tab_canli:
                 """, unsafe_allow_html=True)
                 c_arac.markdown(f"""
                     <div class="metric-card">
-                        <div class="metric-title">AKTİF ARAÇ</div>
+                        <div class="metric-title">AKTIF ARAC</div>
                         <div class="metric-value">{len(temiz_data)}</div>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 st.markdown("""
                     <div class="note-card">
-                        ⚠️ <b>SİSTEM NOTU:</b><br>
-                        Yolcu verileri merkezi sistemden (BURULAŞ/ABYS) kaynaklı olarak 
-                        2-3 dakika gecikmeli yansıyabilmektedir.
+                        ⚠️ <b>SISTEM NOTU:</b><br>
+                        Yolcu verileri merkezi sistemden (BURULAS/ABYS) kaynakli olarak 
+                        2-3 dakika gecikmeli yansiyabilmektedir.
                     </div>
                 """, unsafe_allow_html=True)
                 
@@ -578,10 +579,11 @@ with tab_canli:
                 c2.markdown("<span class='table-header'>HIZ</span>", unsafe_allow_html=True)
                 c3.markdown("<span class='table-header'>YOLCU</span>", unsafe_allow_html=True)
                 c4.markdown("<span class='table-header'>KONUM</span>", unsafe_allow_html=True)
-                c5.markdown("<span class='table-header'>İZLE</span>", unsafe_allow_html=True)
+                c5.markdown("<span class='table-header'>IZLE</span>", unsafe_allow_html=True)
                 st.divider()
 
                 for i, bus in enumerate(temiz_data):
+                    st.info(bus)
                     c1, c2, c3, c4, c5 = st.columns([2.2, 1.1, 1.1, 1.2, 1.8])
                     c1.write(f"**{bus['plaka']}**")
                     
@@ -604,10 +606,10 @@ with tab_canli:
                     st.divider()
 
                 plaka_listesi = [b['plaka'] for b in temiz_data]
-                st.selectbox("Veya listeden seç:", ["Seçiniz..."] + plaka_listesi, key="selectbox_secimi", on_change=arac_secildi_callback)
+                st.selectbox("Veya listeden sec:", ["Seciniz..."] + plaka_listesi, key="selectbox_secimi", on_change=arac_secildi_callback)
 
             else:
-                st.warning("Hat verisi alınamadı.")
+                st.warning("Hat verisi alinamadi.")
 
     if st.session_state.takip_modu and st.session_state.secilen_plaka:
         
@@ -615,7 +617,7 @@ with tab_canli:
         is_plaka = len(arama_terimi) > 4 and arama_terimi[0].isdigit()
         
         if is_plaka:
-            if st.button("🏠 Ana Menüye Dön"):
+            if st.button("🏠 Ana Menuye Don"):
                 st.session_state.takip_modu = False
                 st.session_state.secilen_plaka = None
                 st.session_state.aktif_arama = None
@@ -623,7 +625,7 @@ with tab_canli:
                 st.session_state.hat_ham_veri = []
                 st.rerun()
         else:
-            if st.button("⬅️ Listeye Geri Dön"):
+            if st.button("⬅️ Listeye Geri Don"):
                 st.session_state.takip_modu = False
                 st.session_state.secilen_plaka = None
                 st.rerun()
@@ -651,22 +653,21 @@ with tab_canli:
             st.session_state.secilen_plaka = taze_veri
         else:
             arac = eski_veri
-            st.toast("⚠️ Bağlantı bekleniyor (Yenileniyor...)")
+            st.toast("⚠️ Baglanti bekleniyor (Yenileniyor...)")
 
         st.markdown("---")
-        st.write(arac)
         
         st.markdown(f"""
             <div class='info-box'>
                 <h3 style='margin:0; text-align:center;'>🔴 {arac['plaka']}</h3>
-                <p style='text-align:center; color:#ccc; margin-top:5px;'>CANLI TAKİP MODU</p>
+                <p style='text-align:center; color:#ccc; margin-top:5px;'>CANLI TAKIP MODU</p>
             </div>
         """, unsafe_allow_html=True)
 
-        surucu = arac.get('surucu') or "Belirtilmemiş"
+        surucu = arac.get('surucu') or "Belirtilmemis"
         st.markdown(f"""
             <div style='background-color:#1e1e1e; padding:8px; border-radius:4px; text-align:center; border:1px solid #333; margin-bottom:15px;'>
-                <span style='color:#888; font-size:12px;'>👮 SÜRÜCÜ</span><br>
+                <span style='color:#888; font-size:12px;'>👮 SURUCU</span><br>
                 <span style='color:#fff; font-weight:bold; font-size:16px;'>{surucu}</span>
             </div>
         """, unsafe_allow_html=True)
@@ -700,8 +701,8 @@ with tab_canli:
         
         st.markdown("""
             <div class="note-card">
-                ⚠️ <b>SİSTEM NOTU:</b><br>
-                Yolcu verileri merkezi sistemden kaynaklı 2-3 dk gecikmeli gelebilir.
+                ⚠️ <b>SISTEM NOTU:</b><br>
+                Yolcu verileri merkezi sistemden kaynakli 2-3 dk gecikmeli gelebilir.
             </div>
         """, unsafe_allow_html=True)
 
@@ -713,27 +714,27 @@ with tab_canli:
         folium.Marker(
             [lat, lon],
             tooltip=f"{arac['plaka']}",
-            popup=f"Hız: {k_hiz_canli}", 
+            popup=f"Hiz: {k_hiz_canli}", 
             icon=folium.Icon(color="red", icon="bus", prefix="fa")
         ).add_to(m)
         st_folium(m, width=700, height=350)
 
 # ==========================================
-# 2. SEKME: YENİ ÖHO İSTATİSTİK SİSTEMİ
+# 2. SEKME: YENI OHO ISTATISTIK SISTEMI
 # ==========================================
 with tab_oho:
-    st.markdown("<h3 style='text-align: center; color: #ff4b4b; margin-bottom: 5px;'>📊 ÖHO Filo Verileri</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #ff4b4b; margin-bottom: 5px;'>📊 OHO Filo Verileri</h3>", unsafe_allow_html=True)
     
     st.markdown("""
         <div class="oho-note">
-            ℹ️ <b>BİLGİLENDİRME:</b><br>
-            Bu veriler anlık olarak hat numarası açık olan araçlardan çekilmektedir. 
-            Yolcu verilerinde gecikmeler yaşanmaktadır.
+            ℹ️ <b>BILGILENDIRME:</b><br>
+            Bu veriler anlik olarak hat numarasi acik olan araclardan cekilmektedir. 
+            Yolcu verilerinde gecikmeler yasanmaktadir.
         </div>
     """, unsafe_allow_html=True)
 
-    if st.button("🔄 Tüm Verileri Yükle / Güncelle", use_container_width=True, type="primary"):
-        with st.spinner("Tüm ÖHO Hatları (Batı ve Doğu) taranıyor, bu işlem birkaç saniye sürebilir..."):
+    if st.button("🔄 Tum Verileri Yukle / Guncelle", use_container_width=True, type="primary"):
+        with st.spinner("Tum OHO Hatlari (Bati ve Dogu) taraniyor, bu islem birkac saniye surebilir..."):
             bati_veriler = []
             dogu_veriler = []
             
@@ -747,7 +748,7 @@ with tab_oho:
                 for future in concurrent.futures.as_completed(future_dogu):
                     dogu_veriler.append(future.result())
             
-            # --- KATEGORİ HESAPLAMALARI ---
+            # --- KATEGORI HESAPLAMALARI ---
             s_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] in SIRKET_HATLARI)
             o_12m_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] in OTOBUS_12M_HATLARI)
             m_yolcu = sum(v['yolcu'] for v in bati_veriler if v['hat'] not in SIRKET_HATLARI and v['hat'] not in OTOBUS_12M_HATLARI)
@@ -755,7 +756,7 @@ with tab_oho:
             dogu_m_yolcu = sum(v['yolcu'] for v in dogu_veriler if v['hat'] in DOGU_MIKROBUS_HATLARI)
             dogu_o_yolcu = sum(v['yolcu'] for v in dogu_veriler if v['hat'] not in DOGU_MIKROBUS_HATLARI)
             
-            # --- ENTEGRE HATLARI BİRLEŞTİRME ---
+            # --- ENTEGRE HATLARI BIRLESTIRME ---
             bati_veriler = hatlari_birlestir(bati_veriler, ["6F", "6FD"], "6F & 6FD")
             bati_veriler = hatlari_birlestir(bati_veriler, ["B32", "B32A"], "B32 & B32A")
             bati_veriler = hatlari_birlestir(bati_veriler, ["1T", "1TG", "1TK"], "1T & 1TG & 1TK")
@@ -769,7 +770,7 @@ with tab_oho:
             bati_veriler = hatlari_birlestir(bati_veriler, ["14L2", "14L3"], "14L2 & 14L3")
             bati_veriler = hatlari_birlestir(bati_veriler, ["B36", "B36M"], "B36 & B36M")
             
-            # YOLCU SAYISINA GÖRE SIRALAMA
+            # YOLCU SAYISINA GORE SIRALAMA
             bati_veriler = sorted(bati_veriler, key=lambda x: x['yolcu'], reverse=True)
             dogu_veriler = sorted(dogu_veriler, key=lambda x: x['yolcu'], reverse=True)
             
@@ -787,7 +788,7 @@ with tab_oho:
                 "dogu_otobus_toplam": dogu_o_yolcu,
                 "dogu_mikrobus_toplam": dogu_m_yolcu
             }
-            st.success("Veriler başarıyla çekildi ve entegre hatlar birleştirildi!")
+            st.success("Veriler basariyla cekildi ve entegre hatlar birlestirildi!")
 
     if st.session_state.oho_data:
         data = st.session_state.oho_data
@@ -795,57 +796,57 @@ with tab_oho:
         # --- FARK HESAPLAMALARI ---
         fark_bati = abs(data['otobus_toplam'] - data['mikrobus_toplam'])
         if data['otobus_toplam'] > data['mikrobus_toplam']:
-            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobüsler</b>, mikrobüslerden <b>{fark_bati}</b> yolcu fazla.</div>"
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobusler</b>, mikrobuslerden <b>{fark_bati}</b> yolcu fazla.</div>"
         elif data['mikrobus_toplam'] > data['otobus_toplam']:
-            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobüsler</b>, otobüslerden <b>{fark_bati}</b> yolcu fazla.</div>"
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobusler</b>, otobuslerden <b>{fark_bati}</b> yolcu fazla.</div>"
         else:
-            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobüs ve Mikrobüs yolcu sayıları eşit.</div>"
+            bati_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobus ve Mikrobus yolcu sayilari esit.</div>"
 
         fark_dogu = abs(data['dogu_otobus_toplam'] - data['dogu_mikrobus_toplam'])
         if data['dogu_otobus_toplam'] > data['dogu_mikrobus_toplam']:
-            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobüsler</b>, mikrobüslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Otobusler</b>, mikrobuslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
         elif data['dogu_mikrobus_toplam'] > data['dogu_otobus_toplam']:
-            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobüsler</b>, otobüslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 <b>Mikrobusler</b>, otobuslerden <b>{fark_dogu}</b> yolcu fazla.</div>"
         else:
-            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobüs ve Mikrobüs yolcu sayıları eşit.</div>"
+            dogu_fark_html = f"<div style='color:#00bc8c; font-size:12px; margin-top:8px; border-top: 1px dashed #555; padding-top: 6px;'>🟢 Otobus ve Mikrobus yolcu sayilari esit.</div>"
 
         
         cb1, cd1 = st.columns(2)
         cb1.markdown(f"""
             <div class="metric-card" style="border-left: 5px solid #00bc8c;">
-                <div class="metric-title">ÖHO BATI TOPLAM YOLCU</div>
+                <div class="metric-title">OHO BATI TOPLAM YOLCU</div>
                 <div class="metric-value">{data['bati_toplam_yolcu']}</div>
-                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Araç: {data['bati_toplam_arac']}</div>
+                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Arac: {data['bati_toplam_arac']}</div>
             </div>
         """, unsafe_allow_html=True)
         
         cd1.markdown(f"""
             <div class="metric-card" style="border-left: 5px solid #ff4b4b;">
-                <div class="metric-title">ÖHO DOĞU TOPLAM YOLCU</div>
+                <div class="metric-title">OHO DOGU TOPLAM YOLCU</div>
                 <div class="metric-value">{data['dogu_toplam_yolcu']}</div>
-                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Araç: {data['dogu_toplam_arac']}</div>
+                <div style="font-size:11px; color:#aaa; margin-top:5px;">Aktif Arac: {data['dogu_toplam_arac']}</div>
             </div>
         """, unsafe_allow_html=True)
         
         st.write("")
         
-        with st.expander("📂 ÖHO BATI HATLARI DETAYLARI", expanded=False):
+        with st.expander("📂 OHO BATI HATLARI DETAYLARI", expanded=False):
             
             st.markdown(f"""
                 <div class="type-summary-card">
-                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBÜS HATLARI: <span style="color:#f39c12;">{data['otobus_toplam']}</span> Yolcu</div>
-                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:3px;">• Şirket Araçları (6E, 6A, 97A): <span style="color:#fff;">{data['sirket_yolcu']}</span></div>
-                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:8px;">• 12 Metre Araçlar: <span style="color:#fff;">{data['otobus_12m_yolcu']}</span></div>
-                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MİKROBÜS HATLARI: <span style="color:#f39c12;">{data['mikrobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBUS HATLARI: <span style="color:#f39c12;">{data['otobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:3px;">• Sirket Araclari (6E, 6A, 97A): <span style="color:#fff;">{data['sirket_yolcu']}</span></div>
+                    <div style="color:#aaa; font-size:12px; margin-left:25px; margin-bottom:8px;">• 12 Metre Araclar: <span style="color:#fff;">{data['otobus_12m_yolcu']}</span></div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MIKROBUS HATLARI: <span style="color:#f39c12;">{data['mikrobus_toplam']}</span> Yolcu</div>
                     {bati_fark_html}
                 </div>
             """, unsafe_allow_html=True)
             
             c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
             c1.markdown("<span class='table-header' style='text-align:left;'>HAT NUMARASI</span>", unsafe_allow_html=True)
-            c2.markdown("<span class='table-header' style='text-align:left;'>AKTİF ARAÇ</span>", unsafe_allow_html=True)
+            c2.markdown("<span class='table-header' style='text-align:left;'>AKTIF ARAC</span>", unsafe_allow_html=True)
             c3.markdown("<span class='table-header' style='text-align:left;'>YOLCU</span>", unsafe_allow_html=True)
-            c4.markdown("<span class='table-header' style='text-align:center;'>İŞLEM</span>", unsafe_allow_html=True)
+            c4.markdown("<span class='table-header' style='text-align:center;'>ISLEM</span>", unsafe_allow_html=True)
             st.divider()
             
             for b in data['bati']:
@@ -886,21 +887,21 @@ with tab_oho:
                                     st.rerun()
                     st.divider()
 
-        with st.expander("📂 ÖHO DOĞU HATLARI DETAYLARI", expanded=False):
+        with st.expander("📂 OHO DOGU HATLARI DETAYLARI", expanded=False):
             
             st.markdown(f"""
                 <div class="type-summary-card">
-                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBÜS HATLARI: <span style="color:#f39c12;">{data['dogu_otobus_toplam']}</span> Yolcu</div>
-                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MİKROBÜS HATLARI: <span style="color:#f39c12;">{data['dogu_mikrobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold; margin-bottom:5px;">🚌 OTOBUS HATLARI: <span style="color:#f39c12;">{data['dogu_otobus_toplam']}</span> Yolcu</div>
+                    <div style="color:#fff; font-size:16px; font-weight:bold;">🚐 MIKROBUS HATLARI: <span style="color:#f39c12;">{data['dogu_mikrobus_toplam']}</span> Yolcu</div>
                     {dogu_fark_html}
                 </div>
             """, unsafe_allow_html=True)
             
             c1, c2, c3, c4 = st.columns([1.5, 1.0, 1.0, 1.2])
             c1.markdown("<span class='table-header' style='text-align:left;'>HAT NUMARASI</span>", unsafe_allow_html=True)
-            c2.markdown("<span class='table-header' style='text-align:left;'>AKTİF ARAÇ</span>", unsafe_allow_html=True)
+            c2.markdown("<span class='table-header' style='text-align:left;'>AKTIF ARAC</span>", unsafe_allow_html=True)
             c3.markdown("<span class='table-header' style='text-align:left;'>YOLCU</span>", unsafe_allow_html=True)
-            c4.markdown("<span class='table-header' style='text-align:center;'>İŞLEM</span>", unsafe_allow_html=True)
+            c4.markdown("<span class='table-header' style='text-align:center;'>ISLEM</span>", unsafe_allow_html=True)
             st.divider()
             
             for d in data['dogu']:
