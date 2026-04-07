@@ -21,9 +21,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 st.set_page_config(page_title="Cntooturk Takip Sistemi", page_icon="🚌", layout="centered")
 
 # =====================================================================
-# ASIL SUNUCU (PRIVATE API) HAZIRLIK MOTORU
+# 🔐 ASIL SUNUCU (PRIVATE API) MOTORU - GIZLI GIRIS VE VERI CEKME
 # =====================================================================
-PRIVATE_API_LOGIN_URL = "https://burulas.abys-web.com/Login" 
 try:
     USERNAME = st.secrets["API_USER"]
     PASSWORD = st.secrets["API_PASS"]
@@ -33,16 +32,73 @@ except:
 
 @st.cache_resource
 def get_private_session():
+    """Güvenlik duvarını (Token) aşıp Asıl Sisteme sızan oturum"""
     session = requests.Session()
     retry = Retry(connect=3, backoff_factor=0.3)
     adapter = HTTPAdapter(max_retries=retry, pool_connections=150, pool_maxsize=150)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
+    
+    login_url = "https://burulas.abys-web.com/Login"
+    
+    try:
+        # 1. Adım: Login sayfasına gidip gizli Token'ı çalıyoruz
+        res = session.get(login_url, verify=False, timeout=5)
+        token_match = re.search(r'name="__RequestVerificationToken" type="hidden" value="([^"]+)"', res.text)
+        token = token_match.group(1) if token_match else ""
+        
+        # 2. Adım: Kendi bilgilerimiz ve çaldığımız Token ile kapıyı açıyoruz
+        login_data = {
+            "userName": USERNAME,
+            "Password": PASSWORD,
+            "__RequestVerificationToken": token,
+            "Remember": "false"
+        }
+        session.post(login_url, data=login_data, verify=False, timeout=5)
+    except Exception as e:
+        pass # Bağlantı hatası olursa sessizce geç
+        
     return session
+
+def asil_yolcu_verisi_cek(plaka):
+    """Otobüsün Asıl Sistemdeki Gerçek Validatör ve Hasılat verisini çeker"""
+    if USERNAME == "Tanimsiz": return None
+    
+    session = get_private_session()
+    url = "https://burulas.abys-web.com/RootExpedition/GetRootExpedition"
+    bugun = datetime.now().strftime('%Y.%m.%d')
+    
+    # Sistemin bizden istediği format (A Seçeneği)
+    payload = {
+        "startDate": f"{bugun} 0:0:0",
+        "endDate": f"{bugun} 23:59:59",
+        "routeCode": "",
+        "plates": plaka.replace(" ", "")
+    }
+    
+    try:
+        r = session.post(url, data=payload, verify=False, timeout=5)
+        if r.status_code == 200:
+            veri = r.json()
+            if isinstance(veri, list) and len(veri) > 0:
+                toplam_yolcu = sum(item.get("toplamAdet", 0) for item in veri)
+                toplam_hasilat = sum(item.get("toplamTutar", 0.0) for item in veri)
+                # Sürücü ismi genelde son yapılan seferdedir
+                surucu = veri[-1].get("surucuAdSoyad") or "Belirtilmemiş"
+                
+                return {
+                    "yolcu": int(toplam_yolcu),
+                    "hasilat": float(toplam_hasilat),
+                    "surucu": surucu,
+                    "sefer_sayisi": len(veri)
+                }
+    except:
+        pass
+    return None
 
 # =====================================================================
 
-# --- MEVCUT CALISAN API BAGLANTISI ---
+# --- MEVCUT GPS HARİTA BAĞLANTISI ---
 API_URL = "https://bursakartapi.abys-web.com/api/static/realtimedata"
 HEADERS = {
     'Content-Type': 'application/json',
@@ -246,7 +302,6 @@ TUM_HATLAR = [
 OHO_BATI = ["1C", "1T", "1TG", "1TK", "2B", "2BT", "2E", "B2", "B3", "B3K", "B4", "B5", "6F", "6FD", "6E", "6A", "6K1", "B8", "8L", "9D", "9M", "9PA", "B9", "B10", "B10K", "B12", "B13", "14L", "14L2", "14L3", "14N", "14F", "B16A", "B16B", "B17", "B17B", "B17A", "B20A", "B20B", "B20C", "B20D", "B24", "B25", "B27", "B29", "B31", "B31A", "B32", "B32A", "B33", "B33H", "B33A", "B33K", "B34", "B34U", "B35K1", "B35K2", "35H", "B36", "B36M", "B36C", "B36A", "B36U", "B38", "B39", "B39K", "B40", "40H", "B41B", "B41C", "B42A", "B43", "43A", "B44B", "B46", "97A", "H2", "H3", "H3B", "H3D", "6F1", "6F2", "B20G"]
 OHO_DOGU = ["19B", "19D", "19İ", "D1B", "20", "20A", "21", "23", "23A", "24B", "24D", "27A", "28A"]
 
-# --- OTOBUS TIPLERI LISTESI ---
 SIRKET_HATLARI = ["6E", "6A", "97A"]
 OTOBUS_12M_HATLARI = ["1T", "1TG", "1TK", "6F", "6FD", "6K1", "8L", "9D", "B24", "B25", "B40", "40H", "B41B", "B41C", "B42A", "43A", "B44B", "H2"]
 DOGU_MIKROBUS_HATLARI = ["19D", "24D", "27A", "28A"]
@@ -262,16 +317,13 @@ def get_address(lat, lon):
         if loc:
             address = loc.raw.get('address', {})
             road = address.get('road', '') 
-            
             mahalle = ""
             for key in ['neighbourhood', 'quarter', 'suburb', 'residential', 'village']:
                 if address.get(key):
                     mahalle = address.get(key)
                     break
-            
             if not mahalle:
                 mahalle = address.get('town') or address.get('city_district') or address.get('district') or ""
-
             if road and mahalle: return f"{road}, {mahalle}"
             elif road: return road
             elif mahalle: return mahalle
@@ -305,7 +357,6 @@ def veri_cek(keyword, genis_sorgu=True):
             except:
                 time.sleep(0.5)
                 continue
-                
         return []
     except: return []
 
@@ -324,14 +375,11 @@ def oho_hat_verisi_getir(hat):
 
 def hatlari_birlestir(veri_listesi, hatlar_listesi, yeni_isim):
     birlesecekler = [x for x in veri_listesi if x['hat'] in hatlar_listesi]
-    
     if birlesecekler:
         toplam_arac = sum(x['arac'] for x in birlesecekler)
         toplam_yolcu = sum(x['yolcu'] for x in birlesecekler)
-        
         sub_hatlar = sorted(birlesecekler, key=lambda x: x['yolcu'], reverse=True)
         veri_listesi = [x for x in veri_listesi if x['hat'] not in hatlar_listesi]
-        
         veri_listesi.append({
             "hat": yeni_isim, 
             "arac": toplam_arac, 
@@ -339,7 +387,6 @@ def hatlari_birlestir(veri_listesi, hatlar_listesi, yeni_isim):
             "is_merged": True,
             "sub_hatlar": sub_hatlar
         })
-        
     return veri_listesi
 
 def google_maps_link(lat, lon):
@@ -373,7 +420,7 @@ def arac_secildi_callback():
             time.sleep(1)
 
 st.title("🚌 Cntooturk Takip Sistemi")
-st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Guncelleme | 🚀 v113")
+st.caption(f"🕒 {get_turkey_time()} | ⚡ 20 Sn Guncelleme | 🚀 v114 (Hibrit Motor)")
 
 if st.session_state.get('do_tab_switch'):
     components.html("""
@@ -625,14 +672,12 @@ with tab_canli:
         hedef_hat = eski_veri.get('hatkodu') or st.session_state.aktif_arama
 
         taze_veri = None
-        
         res_plaka = veri_cek(plaka_duzenle(hedef_plaka), genis_sorgu=False)
         if res_plaka:
             for r in res_plaka:
                 if r['plaka'] == hedef_plaka:
                     taze_veri = r
                     break
-        
         if not taze_veri and hedef_hat and hedef_hat != "ÖZEL":
             hat_verisi = veri_cek(hedef_hat, genis_sorgu=True)
             taze_veri = next((x for x in hat_verisi if x['plaka'] == hedef_plaka), None)
@@ -647,9 +692,10 @@ with tab_canli:
 
         st.markdown("---")
         
-        # ISTE BU KUTU BUTUN GIZLI VERIYI EKRANA BASACAK!
-        st.info(arac)
-        
+        # --- HİBRİT MOTOR DEVREYE GİRİYOR ---
+        with st.spinner("Asıl Sistemden (Validatör) kesin veriler çekiliyor..."):
+            private_veri = asil_yolcu_verisi_cek(arac['plaka'])
+
         st.markdown(f"""
             <div class='info-box'>
                 <h3 style='margin:0; text-align:center;'>🔴 {arac['plaka']}</h3>
@@ -657,29 +703,52 @@ with tab_canli:
             </div>
         """, unsafe_allow_html=True)
 
-        surucu = arac.get('surucu') or "Belirtilmemis"
-        st.markdown(f"""
-            <div style='background-color:#1e1e1e; padding:8px; border-radius:4px; text-align:center; border:1px solid #333; margin-bottom:15px;'>
-                <span style='color:#888; font-size:12px;'>👮 SURUCU</span><br>
-                <span style='color:#fff; font-weight:bold; font-size:16px;'>{surucu}</span>
-            </div>
-        """, unsafe_allow_html=True)
+        if private_veri:
+            surucu = private_veri['surucu']
+            gercek_yolcu = private_veri['yolcu']
+            toplam_hasilat = private_veri['hasilat']
+            sefer_sayisi = private_veri['sefer_sayisi']
+            
+            st.markdown(f"""
+                <div style='background-color:#1e1e1e; padding:8px; border-radius:4px; text-align:center; border:1px solid #00bc8c; margin-bottom:15px;'>
+                    <span style='color:#00bc8c; font-size:12px;'>✅ ASIL SİSTEM ONAYLI SÜRÜCÜ</span><br>
+                    <span style='color:#fff; font-weight:bold; font-size:16px;'>{surucu}</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            h_hiz_canli = float(arac.get('hiz', 0) or 0)
+            k_hiz_canli = int(h_hiz_canli * 1.40)
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f"""<div class="metric-card" style="border-bottom: 2px solid #ff4b4b;"><div class="metric-title">HAT</div><div class="metric-value" style="color:#ff4b4b;">{arac.get('hatkodu') or "---"}</div></div>""", unsafe_allow_html=True)
+            c2.markdown(f"""<div class="metric-card" style="border-bottom: 2px solid #ccc;"><div class="metric-title">HIZ</div><div class="metric-value">{k_hiz_canli}</div></div>""", unsafe_allow_html=True)
+            c3.markdown(f"""<div class="metric-card" style="border-bottom: 2px solid #00bc8c;"><div class="metric-title">YOLCU</div><div class="metric-value" style="color:#00bc8c;">{gercek_yolcu}</div></div>""", unsafe_allow_html=True)
+            c4.markdown(f"""<div class="metric-card" style="border-bottom: 2px solid #f39c12;"><div class="metric-title">HASILAT</div><div class="metric-value" style="color:#f39c12; font-size:16px; margin-top:6px;">{toplam_hasilat} ₺</div></div>""", unsafe_allow_html=True)
+            
+            st.markdown(f"""<div style='text-align:right; font-size:11px; color:#aaa; margin-top:5px; margin-bottom:10px;'>Bugün tamamlanan sefer sayısı: <b>{sefer_sayisi}</b></div>""", unsafe_allow_html=True)
 
-        hat_no = arac.get('hatkodu') or "---"
-        
-        h_hiz_canli = float(arac.get('hiz', 0) or 0)
-        k_hiz_canli = int(h_hiz_canli * 1.40)
-        hiz = f"{k_hiz_canli} km/s"
-        
-        ham_anlik = arac.get('seferYolcu')
-        ham_toplam = arac.get('gunlukYolcu', 0) or 0
-        kalibre_toplam = int(ham_toplam * 1.11)
+        else:
+            # Eski Veri Gosterimi (Eger Asıl sistem yanıt vermezse)
+            surucu = arac.get('surucu') or "Belirtilmemis"
+            st.markdown(f"""
+                <div style='background-color:#1e1e1e; padding:8px; border-radius:4px; text-align:center; border:1px solid #333; margin-bottom:15px;'>
+                    <span style='color:#888; font-size:12px;'>👮 SURUCU</span><br>
+                    <span style='color:#fff; font-weight:bold; font-size:16px;'>{surucu}</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            h_hiz_canli = float(arac.get('hiz', 0) or 0)
+            k_hiz_canli = int(h_hiz_canli * 1.40)
+            ham_anlik = arac.get('seferYolcu')
+            ham_toplam = arac.get('gunlukYolcu', 0) or 0
+            kalibre_toplam = int(ham_toplam * 1.11)
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f"""<div class="metric-card"><div class="metric-title">HAT</div><div class="metric-value" style="color:#ff4b4b;">{arac.get('hatkodu') or "---"}</div></div>""", unsafe_allow_html=True)
+            c2.markdown(f"""<div class="metric-card"><div class="metric-title">HIZ</div><div class="metric-value">{k_hiz_canli}</div></div>""", unsafe_allow_html=True)
+            c3.markdown(f"""<div class="metric-card"><div class="metric-title">ANLIK</div><div class="metric-value" style="color:#00bc8c;">{ham_anlik}</div></div>""", unsafe_allow_html=True)
+            c4.markdown(f"""<div class="metric-card"><div class="metric-title">TOPLAM</div><div class="metric-value">{kalibre_toplam}</div></div>""", unsafe_allow_html=True)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(f"""<div class="metric-card"><div class="metric-title">HAT</div><div class="metric-value" style="color:#ff4b4b;">{hat_no}</div></div>""", unsafe_allow_html=True)
-        c2.markdown(f"""<div class="metric-card"><div class="metric-title">HIZ</div><div class="metric-value">{hiz}</div></div>""", unsafe_allow_html=True)
-        c3.markdown(f"""<div class="metric-card"><div class="metric-title">ANLIK</div><div class="metric-value" style="color:#00bc8c;">{ham_anlik}</div></div>""", unsafe_allow_html=True)
-        c4.markdown(f"""<div class="metric-card"><div class="metric-title">TOPLAM</div><div class="metric-value">{kalibre_toplam}</div></div>""", unsafe_allow_html=True)
 
         lat = float(arac['enlem'])
         lon = float(arac['boylam'])
@@ -691,23 +760,17 @@ with tab_canli:
                 <span>{adres}</span>
             </div>
         """, unsafe_allow_html=True)
-        
-        st.markdown("""
-            <div class="note-card">
-                ⚠️ <b>SISTEM NOTU:</b><br>
-                Yolcu verileri merkezi sistemden kaynakli 2-3 dk gecikmeli gelebilir.
-            </div>
-        """, unsafe_allow_html=True)
 
         col_g, col_y = st.columns(2)
         col_g.link_button("🗺️ Google Haritalar", google_maps_link(lat, lon), use_container_width=True)
         col_y.link_button("🧭 Yandex Navigasyon", yandex_maps_link(lat, lon), use_container_width=True)
 
+        # Map Cizimi
         m = folium.Map(location=[lat, lon], zoom_start=15)
         folium.Marker(
             [lat, lon],
             tooltip=f"{arac['plaka']}",
-            popup=f"Hiz: {k_hiz_canli}", 
+            popup=f"Plaka: {arac['plaka']}", 
             icon=folium.Icon(color="red", icon="bus", prefix="fa")
         ).add_to(m)
         st_folium(m, width=700, height=350)
